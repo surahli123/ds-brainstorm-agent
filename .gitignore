@@ -1,0 +1,16 @@
+# Development working files
+dev/scratch/
+*.pyc
+__pycache__/
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Session artifacts (tracked in dev/sessions/, not root)
+*.tmp
