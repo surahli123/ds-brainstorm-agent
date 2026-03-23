@@ -1,0 +1,231 @@
+{
+  "meta": {
+    "version": "1.1",
+    "type": "structural+quality",
+    "description": "v1.0 structural evals (field presence, types, arrays non-empty) + v1.1 quality evals (perspective independence, domain grounding, synthesis quality, Socratic challenge, actionability). Quality evals use agent-as-judge with rubric at evals/quality-rubric.md.",
+    "created": "2026-03-22",
+    "quality_rubric": "quality-rubric.md",
+    "quality_pass_threshold": 3.5,
+    "quality_scale": "1-5 per dimension, weighted average"
+  },
+  "test_cases": [
+    {
+      "id": "eval-001-search-relevance-ndcg",
+      "name": "Search relevance metric choice (easy, with --domain)",
+      "difficulty": "easy",
+      "description": "Clear single-topic question about offline metric selection for search. Domain file provides rich context (NDCG, MRR, QSR). All 3 personas should engage with domain-specific concepts.",
+      "input": {
+        "question": "Should we switch from NDCG@10 to MRR as our primary offline metric for Rovo search?",
+        "flags": {
+          "--domain": "search-relevance"
+        }
+      },
+      "domain": "search-relevance",
+      "expected_phases": ["scope_check", "search_grounding", "dispatch_all_3", "synthesis", "socratic_loop", "structured_output"],
+      "structural_checks": {
+        "scope_check": {
+          "should_pass": true,
+          "reason": "Single clear analysis question about metric selection"
+        },
+        "perspectives_present": {
+          "check": "All 3 perspective keys exist in output",
+          "required_keys": ["methodology_critic", "stakeholder_advocate", "pragmatist"]
+        },
+        "perspective_fields": {
+          "check": "Each perspective has required observation contract fields",
+          "required_per_perspective": {
+            "status": "one of: success | warning | error",
+            "summary": "non-empty string",
+            "perspective": "matches perspective key",
+            "assessment": "one of: SOUND | CONCERNS | MAJOR_ISSUES",
+            "findings": "non-empty array",
+            "next_actions": "non-empty array",
+            "domain_references": "non-empty array (domain loaded)"
+          }
+        },
+        "domain_references": {
+          "check": "Each persona references at least 1 domain-specific concept",
+          "expected_concepts_any_of": ["NDCG", "MRR", "QSR", "query success rate", "BM25", "cross-encoder", "L1", "L2", "ranking", "position bias", "click logs", "offline evaluation", "online evaluation"]
+        },
+        "synthesis": {
+          "check": "Synthesis section has required structure",
+          "required_fields": {
+            "agreements": "non-empty array (length >= 1)",
+            "tensions": "non-empty array (length >= 1)",
+            "key_question": "non-empty string"
+          }
+        },
+        "socratic_dialogue": {
+          "check": "At least 1 round of Socratic dialogue captured",
+          "required_fields": {
+            "dialogue_history": "array with length >= 2 (1 challenger + 1 user minimum)"
+          },
+          "dialogue_entry_fields": ["role", "references_persona", "round", "content"]
+        },
+        "json_parseable": {
+          "check": "Structured output JSON is valid and parseable"
+        }
+      },
+      "quality_checks": {
+        "rubric": "quality-rubric.md",
+        "dimensions": {
+          "perspective_independence": {
+            "weight": 0.30,
+            "minimum_score": 4,
+            "rationale": "Clean methodology question with natural persona divergence: Methodology Critic on metric validity, Stakeholder Advocate on user outcomes, Pragmatist on label availability and rebaselining cost."
+          },
+          "domain_grounding": {
+            "weight": 0.20,
+            "minimum_score": 4,
+            "rationale": "search-relevance domain file provides rich vocabulary (NDCG, MRR, QSR, BM25, cross-encoder, L1/L2, position bias, click logs). All personas should use domain terms in findings, not just domain_references arrays."
+          },
+          "synthesis_quality": {
+            "weight": 0.20,
+            "minimum_score": 3,
+            "rationale": "Methodology Critic likely wants debiasing and correlation analysis before switching; Pragmatist pushes for simpler side-by-side. Tension should surface but may not be as sharp as the churn case."
+          },
+          "socratic_challenge": {
+            "weight": 0.15,
+            "minimum_score": 3,
+            "rationale": "Should push on at least one unaddressed concern (e.g., rebaselining past experiments, offline-online correlation). Clean question means user may have good answers, so floor is 3."
+          },
+          "actionability": {
+            "weight": 0.15,
+            "minimum_score": 3,
+            "rationale": "next_actions should include: validate label types (graded vs binary), compute both metrics on existing eval sets, check offline-online metric correlation. Narrow question limits action plan scope."
+          }
+        },
+        "pass_criteria": {
+          "weighted_average_minimum": 3.5,
+          "all_dimension_minimums_met": true
+        }
+      },
+      "test_case_file": "test-cases/search-relevance-ndcg.md"
+    },
+    {
+      "id": "eval-002-churn-prediction",
+      "name": "Churn prediction model (medium, no --domain)",
+      "difficulty": "medium",
+      "description": "Common DS question without domain enrichment. The VP's 15% churn reduction target and quarterly timeline add stakeholder complexity. Tests that personas produce meaningful output without domain knowledge.",
+      "input": {
+        "question": "I want to build a churn prediction model. We have 2 years of user activity logs and payment data. The VP wants to reduce churn by 15% this quarter.",
+        "flags": {}
+      },
+      "domain": null,
+      "expected_phases": ["scope_check", "search_grounding", "dispatch_all_3", "synthesis", "socratic_loop", "structured_output"],
+      "structural_checks": {
+        "scope_check": {
+          "should_pass": true,
+          "reason": "Single analysis question about churn prediction, despite timeline and stakeholder complexity"
+        },
+        "perspectives_present": {
+          "check": "All 3 perspective keys exist in output",
+          "required_keys": ["methodology_critic", "stakeholder_advocate", "pragmatist"]
+        },
+        "perspective_fields": {
+          "check": "Each perspective has required observation contract fields",
+          "required_per_perspective": {
+            "status": "one of: success | warning | error",
+            "summary": "non-empty string",
+            "perspective": "matches perspective key",
+            "assessment": "one of: SOUND | CONCERNS | MAJOR_ISSUES",
+            "findings": "non-empty array",
+            "next_actions": "non-empty array",
+            "domain_references": "array (may be empty — no domain loaded)"
+          }
+        },
+        "domain_references": {
+          "check": "domain_references array may be empty since no --domain flag",
+          "no_domain_loaded": true
+        },
+        "synthesis": {
+          "check": "Synthesis section has required structure",
+          "required_fields": {
+            "agreements": "non-empty array (length >= 1)",
+            "tensions": "non-empty array (length >= 1)",
+            "key_question": "non-empty string"
+          }
+        },
+        "socratic_dialogue": {
+          "check": "At least 1 round of Socratic dialogue captured",
+          "required_fields": {
+            "dialogue_history": "array with length >= 2 (1 challenger + 1 user minimum)"
+          },
+          "dialogue_entry_fields": ["role", "references_persona", "round", "content"]
+        },
+        "json_parseable": {
+          "check": "Structured output JSON is valid and parseable"
+        }
+      },
+      "quality_checks": {
+        "rubric": "quality-rubric.md",
+        "dimensions": {
+          "perspective_independence": {
+            "weight": 0.30,
+            "minimum_score": 4,
+            "rationale": "Strong natural divergence: Methodology Critic on prediction-intervention gap and causal inference, Stakeholder Advocate on VP's 15% intervention target, Pragmatist on quarterly timeline and 80/20 scoping."
+          },
+          "domain_grounding": {
+            "weight": 0.20,
+            "minimum_score": 2,
+            "ceiling": 3,
+            "rationale": "No --domain flag. Personas should use churn-specific DS vocabulary (causal inference, feature leakage, survivorship bias, intervention channels) but ceiling is 3 per rubric compressed scale."
+          },
+          "synthesis_quality": {
+            "weight": 0.20,
+            "minimum_score": 4,
+            "rationale": "This case has sharp built-in tensions: rigor vs timeline (causal analysis won't ship this quarter), prediction vs intervention (model doesn't reduce churn alone), 80/20 vs full pipeline. Synthesis must stage these as explicit exchanges."
+          },
+          "socratic_challenge": {
+            "weight": 0.15,
+            "minimum_score": 3,
+            "rationale": "Rich material for pushback: VP timeline vs methodological rigor, prediction vs intervention gap, intervention channel availability. Challenger should force user to choose."
+          },
+          "actionability": {
+            "weight": 0.15,
+            "minimum_score": 4,
+            "rationale": "VP's concrete 15% quarterly target creates strong actionability pressure. Findings should connect to decisions with IF/THEN structure and concrete timelines."
+          }
+        },
+        "pass_criteria": {
+          "weighted_average_minimum": 3.5,
+          "all_dimension_minimums_met": true
+        }
+      },
+      "test_case_file": "test-cases/churn-prediction.md"
+    },
+    {
+      "id": "eval-003-multi-topic-scope-check",
+      "name": "Multi-topic scope check gate (hard, tests Phase 0 rejection)",
+      "difficulty": "hard",
+      "description": "Input contains 3 distinct analysis topics. Phase 0 scope check should fire, reject the multi-topic input, and ask the user to pick one. No subagents should be dispatched.",
+      "input": {
+        "question": "I want to analyze our search ranking quality, build a recommendation engine, and also look at user segmentation for marketing.",
+        "flags": {}
+      },
+      "domain": null,
+      "expected_phases": ["scope_check_rejection"],
+      "structural_checks": {
+        "scope_check": {
+          "should_pass": false,
+          "reason": "Input contains 3 distinct analysis topics: (1) search ranking quality, (2) recommendation engine, (3) user segmentation for marketing",
+          "expected_behavior": "Agent surfaces the 3 topics and asks the user to pick one"
+        },
+        "no_subagent_dispatch": {
+          "check": "No subagent outputs should be produced",
+          "perspectives_present": false,
+          "synthesis_present": false,
+          "dialogue_present": false
+        },
+        "user_prompt": {
+          "check": "Agent asks user to select a single topic before proceeding",
+          "expected": "Response should enumerate the detected topics and ask user to choose one"
+        },
+        "json_parseable": {
+          "check": "Not applicable — no structured output produced for scope-check rejections"
+        }
+      },
+      "test_case_file": "test-cases/multi-topic-scope-check.md"
+    }
+  ]
+}

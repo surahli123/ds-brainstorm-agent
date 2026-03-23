@@ -1,6 +1,6 @@
 ---
 description: Brainstorm a DS analysis with multi-persona Socratic debate
-argument-hint: [analysis question] [--domain search-relevance] [--rounds 3]
+argument-hint: [analysis question] [--domain search-relevance] [--stakeholder "Name"] [--rounds 3]
 model: opus
 ---
 

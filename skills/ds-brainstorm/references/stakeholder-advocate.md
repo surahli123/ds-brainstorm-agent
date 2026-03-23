@@ -55,3 +55,22 @@ Skim (don't ignore, but don't lead with): statistical methodology internals, imp
   "domain_references": ["specific domain concepts referenced"]
 }
 ```
+
+## Multi-Stakeholder Mode
+
+When the evidence block contains multiple stakeholder profiles:
+1. Identify where stakeholders' priorities ALIGN (easy wins — frame the analysis to hit all priorities)
+2. Identify where they CONFLICT (requires political navigation — flag explicitly)
+3. For each finding, note which stakeholder it serves and which it might not
+4. In your framing_recommendation, specify: "For [Stakeholder A], frame as... For [Stakeholder B], frame as..."
+5. Add a `stakeholder_tensions` field to your output JSON:
+   ```json
+   "stakeholder_tensions": [
+     {
+       "stakeholder_a": "Jane Doe",
+       "stakeholder_b": "Bob Smith",
+       "tension": "Jane prioritizes speed-to-ship; Bob requires methodological rigor",
+       "recommendation": "Present the 80/20 version to Jane first, then the full methodology to Bob"
+     }
+   ]
+   ```
