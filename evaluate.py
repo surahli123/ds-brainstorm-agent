@@ -128,13 +128,19 @@ def _run_codex_with_retry(
 ) -> tuple[dict | None, str | None]:
     """Run Codex exec with one retry on malformed output.
 
+    Reads the prompt from the temp file and passes it via stdin to
+    `codex exec -s read-only -`. The `-` tells codex to read from stdin.
+
     Per Codex Failure Policy: retry once on malformed JSON,
     then return None if second attempt also fails.
     """
+    prompt_text = Path(prompt_file).read_text()
+
     for attempt in range(2):
         try:
             result = subprocess.run(
-                ["codex", "exec", "-q", "--read", prompt_file],
+                ["codex", "exec", "-s", "read-only", "-"],
+                input=prompt_text,
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
