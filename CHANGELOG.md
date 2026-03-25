@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.2.0] - 2026-03-24 — DS AutoResearch Loop (v1)
+
+### Added
+- Automated analysis improvement loop (`loop_runner.py`)
+  - Claude Code writes improvements, Codex CLI judges score them
+  - Git-based keep/revert in isolated temp directory
+  - Percentage-based phases: structural (40%) → substance (40%) → polish (20%)
+  - Human gate for marginal improvements (0.3-1.0 range)
+  - Stop rules: 3 non-improving cycles, budget cap, target score
+  - Backup original before modification, conditional write-back
+- Dual Codex judge system (`evaluate.py`)
+  - Substance judge: statistical rigor, methodology, evidence-conclusion alignment, data interpretation
+  - Communication judge: narrative flow, audience calibration, visualization effectiveness, exec summary
+  - Parallel execution via ThreadPoolExecutor
+  - Temp directory cleanup, retry-once on malformed output
+- Judge prompt templates (`skills/ds-autoresearch/references/`)
+  - Full rubric with scoring anchors from review_config.yaml
+  - Strict JSON output format with critique field
+- Single-cycle writer prompt (`program.md` rewritten)
+  - Stripped loop/eval/revert logic (orchestrator handles that)
+  - Cycle summary context from previous iterations
+  - Writer refusal detection (headers, length, prefix checks)
+- Smoke tests (`test_smoke.py` — 37 tests)
+  - Decision logic: keep, revert, human gate, regression blocking
+  - Stop rules, budget cap, judge failure handling, phase detection
+  - Writer output validation, config validation, cycle summary builder
+- Skill documentation (`skills/ds-autoresearch/SKILL.md`)
+
+### Changed
+- `review_config.yaml`: min_improvement 0.02 → 0.3, max_consecutive_reverts 5 → 3
+- `evaluate.py`: wired Codex judge calls, added config weight validation, null-safety
+
 ## [1.1.1] - 2026-03-23 — Domain Knowledge Enrichment
 
 ### Changed
