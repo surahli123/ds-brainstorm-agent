@@ -1,0 +1,165 @@
+# ──────────────────────────────────────────────────────────
+# review_config.yaml
+# Configuration for DS analysis writing evaluation
+# ──────────────────────────────────────────────────────────
+
+# ── Composite Score Weights ──────────────────────────────
+# These control how much each subagent contributes to the
+# final composite score. Must sum to 1.0.
+#
+# Adjust based on your priorities:
+#   - Heavier substance (0.6/0.4) for technical audiences
+#   - Heavier communication (0.4/0.6) for executive audiences
+#   - Equal (0.5/0.5) for mixed audiences
+
+weights:
+  substance: 0.55
+  communication: 0.45
+
+
+# ── Per-Dimension Weights (within each subagent) ────────
+# These let you emphasize specific dimensions within each
+# subagent's evaluation. Default is 1.0 (equal weight).
+# Higher = more important to the composite score.
+
+substance_dimensions:
+  statistical_rigor: 1.2           # slightly prioritize — common DS weakness
+  methodology_soundness: 1.0
+  evidence_conclusion_alignment: 1.3  # highest priority — the core of good DS writing
+  data_interpretation_accuracy: 1.0
+
+communication_dimensions:
+  narrative_flow: 1.0
+  audience_calibration: 1.1        # slightly prioritize — often mismatched
+  visualization_effectiveness: 0.9  # lower if your analysis is text-heavy
+  executive_summary_clarity: 1.2    # high priority — first thing stakeholders read
+
+
+# ── Substance Subagent Rubric ───────────────────────────
+# Each dimension has a description and scoring anchors.
+# Pass these to your substance subagent so it scores
+# consistently across runs.
+
+substance_rubric:
+  - dimension: statistical_rigor
+    description: >
+      Are statistical claims precise and appropriate? Do quantitative
+      statements include effect sizes, confidence intervals, p-values,
+      or other measures of uncertainty where warranted? Are statistical
+      tests appropriate for the data type and distribution?
+    anchors:
+      9-10: "All claims have appropriate uncertainty quantification; tests are well-justified"
+      7-8: "Most claims are well-supported; minor omissions in uncertainty reporting"
+      5-6: "Some claims lack statistical backing; occasional misuse of methods"
+      3-4: "Frequent unsupported claims; statistical methods poorly justified"
+      1-2: "No statistical reasoning; numbers presented without context"
+
+  - dimension: methodology_soundness
+    description: >
+      Is the analytical approach clearly described and appropriate for
+      the question? Are assumptions stated explicitly? Are limitations
+      acknowledged? Could another analyst reproduce this work?
+    anchors:
+      9-10: "Method fully reproducible; assumptions explicit; limitations discussed"
+      7-8: "Method mostly clear; most assumptions stated; some limitations noted"
+      5-6: "Method described but gaps in reproducibility; implicit assumptions"
+      3-4: "Method vague; major assumptions unstated"
+      1-2: "No methodology section or completely inadequate"
+
+  - dimension: evidence_conclusion_alignment
+    description: >
+      Do the conclusions follow logically from the evidence presented?
+      Are causal claims distinguished from correlational findings?
+      Are alternative explanations considered? Does every recommendation
+      have supporting evidence shown earlier in the document?
+    anchors:
+      9-10: "Perfect alignment; all conclusions trace to evidence; alternatives considered"
+      7-8: "Strong alignment; minor gaps in evidence chain"
+      5-6: "Some conclusions lack direct evidence; causal language occasionally loose"
+      3-4: "Significant disconnect between findings and conclusions"
+      1-2: "Conclusions appear invented or contradicted by the data shown"
+
+  - dimension: data_interpretation_accuracy
+    description: >
+      Are numbers, percentages, and trends described correctly? Are
+      visualizations interpreted accurately in the text? Are comparisons
+      (YoY, vs benchmark, etc.) calculated correctly? Are outliers and
+      edge cases acknowledged?
+    anchors:
+      9-10: "All interpretations accurate; edge cases noted; comparisons precise"
+      7-8: "Mostly accurate; minor imprecisions in describing trends"
+      5-6: "Some misinterpretations; key nuances missed"
+      3-4: "Frequent errors in describing what the data shows"
+      1-2: "Interpretations contradict the data"
+
+
+# ── Communication Subagent Rubric ───────────────────────
+
+communication_rubric:
+  - dimension: narrative_flow
+    description: >
+      Does the analysis tell a coherent story? Are sections logically
+      ordered (context → method → findings → implications)? Are transitions
+      smooth? Does each section build on the previous one? Is there a
+      clear through-line from question to answer?
+    anchors:
+      9-10: "Reads like a compelling story; each section flows naturally to the next"
+      7-8: "Good structure; minor transition gaps"
+      5-6: "Sections feel somewhat disconnected; reader has to work to follow"
+      3-4: "No clear narrative arc; sections appear in arbitrary order"
+      1-2: "Stream-of-consciousness; no discernible structure"
+
+  - dimension: audience_calibration
+    description: >
+      Is the technical depth appropriate for the stated or implied audience?
+      Are jargon and acronyms explained when needed? Is the level of
+      detail right — not too shallow for technical readers, not too dense
+      for business stakeholders?
+    anchors:
+      9-10: "Perfectly calibrated; technical depth matches audience throughout"
+      7-8: "Mostly well-calibrated; occasional jargon without explanation"
+      5-6: "Uneven calibration; some sections too technical, others too shallow"
+      3-4: "Significant mismatch between content and audience"
+      1-2: "Written for the wrong audience entirely"
+
+  - dimension: visualization_effectiveness
+    description: >
+      Does every chart or table serve a clear analytical purpose? Are
+      visualizations annotated with key takeaways? Are axis labels,
+      titles, and legends clear? Would removing any visualization weaken
+      the argument? (Score N/A dimensions as 7.0 if no visualizations.)
+    anchors:
+      9-10: "Every viz has a clear purpose, takeaway annotation, and clean design"
+      7-8: "Most viz are effective; minor labeling or annotation gaps"
+      5-6: "Some viz are unclear or redundant; missing takeaway callouts"
+      3-4: "Viz are confusing or don't support the narrative"
+      1-2: "Viz are misleading, mislabeled, or irrelevant"
+
+  - dimension: executive_summary_clarity
+    description: >
+      Does the executive summary (or introduction) state the business
+      impact and key finding within the first 2-3 sentences? Can a busy
+      stakeholder read ONLY the summary and understand what was found
+      and what action to take? Is it concise (under 200 words)?
+    anchors:
+      9-10: "Summary alone is actionable; impact stated in first sentence; concise"
+      7-8: "Summary is clear but could be tighter or lead with impact more directly"
+      5-6: "Summary exists but buries the key finding; too long or vague"
+      3-4: "Summary is a table of contents, not a finding summary"
+      1-2: "No executive summary, or it's misleading"
+
+
+# ── Loop Safety Thresholds ──────────────────────────────
+
+thresholds:
+  # Minimum improvement to count as "better" (prevents noise-driven keeps)
+  min_improvement: 0.3
+
+  # If score_stdev exceeds this across multi-runs, evaluation is too noisy
+  max_acceptable_stdev: 0.5
+
+  # Stop loop if composite exceeds this (diminishing returns)
+  target_score: 9.0
+
+  # Max consecutive reverts before suggesting human review
+  max_consecutive_reverts: 3
