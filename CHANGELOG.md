@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.1] - 2026-03-23 — Domain Knowledge Enrichment
+
+### Changed
+- Search-relevance domain file expanded from 101 → 227 lines
+  - Added metric formulas, baselines, alert thresholds (QSR, DLCTR)
+  - Added 9 co-movement diagnostic patterns
+  - Added LLM-as-Judge methodology (UMBRELLA + pairwise) with 4 measurement pitfalls
+  - Added 8-stage pipeline architecture with per-stage failure modes
+  - Added 9-class failure taxonomy with metric signatures
+  - Added 4 known recurring patterns and investigation priority order
+  - Source: Search Metric Analyzer knowledge base (metric_definitions.yaml, evaluation_methods.yaml, etc.)
+
 ## [1.1.0] - 2026-03-22 — Parallel Dispatch, Multi-Stakeholder, Quality Evals, Report Gen
 
 ### Added
