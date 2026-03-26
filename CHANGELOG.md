@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0] - 2026-03-25 — Feedback-Forward + Binary Eval (v2)
+
+### Added
+- Feedback-forward: judge critiques passed to writer via JUDGE FEEDBACK section
+  - Writer now knows WHY scores are low, targets specific weaknesses
+  - Full critique from previous cycle included in writer prompt
+- Binary eval scoring mode
+  - `convert_binary_to_numeric()` and `parse_binary_judge_output()` in evaluate.py
+  - Binary judge templates: 16 yes/no questions per judge (substance + communication)
+  - Score = (true answers / total) × 10 — more stable than 1-10 subjective
+  - Transparent format detection: numeric and binary judges work interchangeably
+- 10 new tests (47 total): feedback-forward assembly + binary scoring math
+- Global pre-commit hook (`~/.git-hooks/pre-commit`) blocks commits to main/master
+
+### Changed
+- `_run_codex_with_retry` uses `parse_binary_judge_output` for format-agnostic score extraction
+- Cycle summary no longer duplicates critique text (full critiques go via judge_feedback)
+- Writer function signatures accept `judge_feedback` param (backward-compatible)
+
+### Fixed
+- Codex CLI invocation: `codex exec -s read-only -` via stdin (not `--read` flag)
+
 ## [1.2.0] - 2026-03-24 — DS AutoResearch Loop (v1)
 
 ### Added
