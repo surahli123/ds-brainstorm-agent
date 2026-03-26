@@ -610,3 +610,154 @@ class TestCycleSummaryBuilder:
         summary = _build_cycle_summary(history)
         assert "Cycle 1" in summary
         assert "keep" in summary
+
+
+# ─────────────────────────────────────────────
+# v2 Feature Tests: Feedback-Forward
+# ─────────────────────────────────────────────
+
+class TestFeedbackForward:
+    """Tests for passing judge critiques to the writer (v2 feedback-forward)."""
+
+    def test_writer_message_includes_critique_when_provided(self):
+        """Writer message should contain judge critique text."""
+        from loop_runner import _build_writer_message
+
+        msg = _build_writer_message(
+            analysis_text="# Test\n\nContent here.",
+            cycle=2,
+            total_cycles=10,
+            phase="substance",
+            cycle_summary="Previous: kept cycle 1",
+            judge_feedback="SUBSTANCE: statistical_rigor scored 3.5 because no CIs.\n"
+                          "COMMUNICATION: exec summary scored 8.5, strong improvement.",
+        )
+        assert "JUDGE FEEDBACK" in msg
+        assert "statistical_rigor scored 3.5" in msg
+        assert "exec summary scored 8.5" in msg
+
+    def test_writer_message_omits_feedback_when_empty(self):
+        """No judge feedback → no JUDGE FEEDBACK section in message."""
+        from loop_runner import _build_writer_message
+
+        msg = _build_writer_message(
+            analysis_text="# Test\n\nContent.",
+            cycle=1,
+            total_cycles=10,
+            phase="structural",
+        )
+        assert "JUDGE FEEDBACK" not in msg
+
+    def test_writer_message_omits_feedback_when_none(self):
+        """Explicit None judge feedback → no JUDGE FEEDBACK section."""
+        from loop_runner import _build_writer_message
+
+        msg = _build_writer_message(
+            analysis_text="# Test\n\nContent.",
+            cycle=2,
+            total_cycles=10,
+            phase="substance",
+            judge_feedback=None,
+        )
+        assert "JUDGE FEEDBACK" not in msg
+
+    def test_full_critique_passed_via_judge_feedback_not_summary(self):
+        """Full critiques go via judge_feedback param, not cycle summary.
+
+        Cycle summary stays concise (scores only). The writer gets full
+        critiques through the separate judge_feedback parameter.
+        """
+        from loop_runner import _build_cycle_summary
+
+        history = [
+            {
+                "action": "keep", "cycle": 1, "composite": 5.5,
+                "hypothesis": "structural fix",
+                "sub_critique": "Statistical rigor is weak — no confidence intervals.",
+                "comm_critique": "Exec summary now leads with impact. Good.",
+            },
+        ]
+        summary = _build_cycle_summary(history)
+        # Summary should NOT contain critique text (that goes via judge_feedback)
+        assert "Statistical rigor is weak" not in summary
+        # But should still contain the action/score info
+        assert "keep" in summary
+        assert "5.5" in summary
+
+
+# ─────────────────────────────────────────────
+# v2 Feature Tests: Binary Eval Dimensions
+# ─────────────────────────────────────────────
+
+class TestBinaryEvalScoring:
+    """Tests for binary (yes/no checklist) scoring mode."""
+
+    def test_binary_scores_convert_to_numeric(self):
+        """Binary checklist {true/false} → numeric 0-10 score."""
+        from evaluate import convert_binary_to_numeric
+
+        binary = {
+            "has_confidence_intervals": False,
+            "has_significance_tests": False,
+            "has_sample_sizes": True,
+            "has_effect_sizes": False,
+        }
+        # 1/4 true → 2.5
+        score = convert_binary_to_numeric(binary)
+        assert score == pytest.approx(2.5)
+
+    def test_all_true_scores_ten(self):
+        """All checklist items true → score of 10.0."""
+        from evaluate import convert_binary_to_numeric
+
+        binary = {"a": True, "b": True, "c": True}
+        assert convert_binary_to_numeric(binary) == pytest.approx(10.0)
+
+    def test_all_false_scores_zero(self):
+        """All checklist items false → score of 0.0."""
+        from evaluate import convert_binary_to_numeric
+
+        binary = {"a": False, "b": False}
+        assert convert_binary_to_numeric(binary) == pytest.approx(0.0)
+
+    def test_empty_checklist_scores_zero(self):
+        """Empty checklist → 0.0."""
+        from evaluate import convert_binary_to_numeric
+
+        assert convert_binary_to_numeric({}) == pytest.approx(0.0)
+
+    def test_parse_binary_judge_output(self):
+        """Parse judge JSON with binary checklist format."""
+        from evaluate import parse_binary_judge_output
+
+        raw = {
+            "statistical_rigor": {
+                "has_confidence_intervals": False,
+                "has_significance_tests": True,
+                "has_sample_sizes": True,
+                "has_effect_sizes": False,
+            },
+            "methodology_soundness": {
+                "has_clear_method": True,
+                "has_assumptions_stated": False,
+                "has_limitations": True,
+            },
+            "critique": "Some critique text here.",
+        }
+        scores, critique = parse_binary_judge_output(raw)
+        assert scores["statistical_rigor"] == pytest.approx(5.0)  # 2/4
+        assert scores["methodology_soundness"] == pytest.approx(6.67, abs=0.1)  # 2/3
+        assert critique == "Some critique text here."
+
+    def test_parse_binary_handles_mixed_format(self):
+        """If judge returns numeric scores (not binary), pass through unchanged."""
+        from evaluate import parse_binary_judge_output
+
+        raw = {
+            "statistical_rigor": 7.5,
+            "methodology_soundness": 6.0,
+            "critique": "Direct numeric scores.",
+        }
+        scores, critique = parse_binary_judge_output(raw)
+        assert scores["statistical_rigor"] == 7.5
+        assert scores["methodology_soundness"] == 6.0

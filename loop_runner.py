@@ -249,10 +249,13 @@ def _build_writer_message(
     total_cycles: int,
     phase: str,
     cycle_summary: str = "",
+    judge_feedback: str | None = None,
 ) -> str:
     """Build the user message for the writer agent.
 
-    Includes the analysis text, cycle info, phase, and previous cycle summary.
+    Includes the analysis text, cycle info, phase, previous cycle summary,
+    and judge feedback (v2 feedback-forward). The judge feedback tells the
+    writer WHY scores are low so it can target specific weaknesses.
     """
     parts = [
         f"CYCLE: {cycle} of {total_cycles}",
@@ -260,6 +263,8 @@ def _build_writer_message(
     ]
     if cycle_summary:
         parts.append(f"\nPREVIOUS CYCLE SUMMARY:\n{cycle_summary}")
+    if judge_feedback:
+        parts.append(f"\nJUDGE FEEDBACK FROM PREVIOUS CYCLE:\n{judge_feedback}")
     parts.append(f"\nANALYSIS TO IMPROVE:\n\n{analysis_text}")
     return "\n".join(parts)
 
@@ -271,6 +276,8 @@ def call_writer_claude_code(
     total_cycles: int,
     phase: str,
     cycle_summary: str = "",
+    judge_feedback: str | None = None,
+    **kwargs,
 ) -> str | None:
     """Call Claude Code CLI as the writer agent.
 
@@ -280,7 +287,8 @@ def call_writer_claude_code(
     Returns the improved analysis text, or None if the call fails.
     """
     user_msg = _build_writer_message(
-        analysis_text, cycle, total_cycles, phase, cycle_summary
+        analysis_text, cycle, total_cycles, phase, cycle_summary,
+        judge_feedback=judge_feedback,
     )
 
     try:
@@ -314,7 +322,9 @@ def call_writer_anthropic(
     total_cycles: int,
     phase: str,
     cycle_summary: str = "",
+    judge_feedback: str | None = None,
     model: str = "claude-sonnet-4-20250514",
+    **kwargs,
 ) -> str | None:
     """Call Anthropic API directly as the writer agent.
 
@@ -330,7 +340,8 @@ def call_writer_anthropic(
         return None
 
     user_msg = _build_writer_message(
-        analysis_text, cycle, total_cycles, phase, cycle_summary
+        analysis_text, cycle, total_cycles, phase, cycle_summary,
+        judge_feedback=judge_feedback,
     )
 
     client = Anthropic()
@@ -434,8 +445,8 @@ def _git_diff(workdir: str) -> str:
 def _build_cycle_summary(history: list[dict]) -> str:
     """Build a brief summary of previous cycles for the writer.
 
-    Tells the writer what was tried and what scores changed,
-    so it can avoid repeating failed approaches (eng review #3).
+    Tells the writer what was tried, what scores changed, and includes
+    critique snippets so the writer knows WHY edits were kept/reverted.
     """
     if not history:
         return ""
@@ -455,6 +466,8 @@ def _build_cycle_summary(history: list[dict]) -> str:
         composite = entry.get("composite", "?")
         hypothesis = entry.get("hypothesis", "")
         lines.append(f"  Cycle {cycle_num}: {action} (composite={composite}) — {hypothesis}")
+        # Note: full critiques are passed separately via judge_feedback param
+        # (v2 feedback-forward). Cycle summary stays concise — scores only.
 
     return "\n".join(lines)
 
@@ -685,6 +698,21 @@ def run_loop(args):
         analysis_text = analysis_dest.read_text()
         cycle_summary = _build_cycle_summary(history)
 
+        # Build judge feedback from previous cycle (v2 feedback-forward).
+        # This tells the writer WHY scores are low so it targets weaknesses.
+        judge_feedback = None
+        if history:
+            last = history[-1]
+            sub_crit = last.get("sub_critique", "")
+            comm_crit = last.get("comm_critique", "")
+            if sub_crit or comm_crit:
+                parts = []
+                if sub_crit:
+                    parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
+                if comm_crit:
+                    parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+                judge_feedback = "\n\n".join(parts)
+
         improved_text = writer_fn(
             analysis_text=analysis_text,
             system_prompt=system_prompt,
@@ -692,6 +720,7 @@ def run_loop(args):
             total_cycles=args.cycles,
             phase=phase,
             cycle_summary=cycle_summary,
+            judge_feedback=judge_feedback,
         )
 
         # Writer failure handling (CEO review #14, #15)
@@ -792,6 +821,8 @@ def run_loop(args):
             "improvement": round(improvement, 4),
             "phase": phase,
             "hypothesis": f"{phase} improvement",
+            "sub_critique": sub_critique or "",
+            "comm_critique": comm_critique or "",
         })
         _log_scores(run_dir, {
             "cycle": cycle,

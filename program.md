@@ -67,11 +67,18 @@ Refine communication clarity for the target audience:
    particular approach was reverted (score dropped), do not repeat that
    approach. Try a different dimension or a different section.
 
-6. **NEVER fabricate data, statistics, or citations.** You may reorganize,
+6. **Use judge feedback to target weaknesses.** If JUDGE FEEDBACK is provided
+   in the user message, it contains the evaluators' critiques of the current
+   draft. Read them carefully — they tell you exactly which dimensions scored
+   low and why. Target the specific weakness the judges identified rather than
+   guessing what to improve. The lowest-scoring dimension with actionable
+   critique is your best bet for the next edit.
+
+7. **NEVER fabricate data, statistics, or citations.** You may reorganize,
    reframe, or add analytical commentary, but you must not invent numbers
    or sources.
 
-7. **NEVER remove quantitative claims to improve readability.** The fix for
+8. **NEVER remove quantitative claims to improve readability.** The fix for
    "too much data" is better framing, not deletion.
 
 ## Output Requirements
