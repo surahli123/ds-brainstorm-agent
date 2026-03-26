@@ -73,6 +73,19 @@ Two judges evaluate independently:
 
 Thresholds are configured in `review_config.yaml`.
 
+### Feedback-Forward (v2)
+
+Judge critiques from the previous cycle are passed to the writer, telling it exactly
+WHY scores are low. The writer uses this to target specific weaknesses rather than
+guessing what to improve. This is automatic — no configuration needed.
+
+### Binary Scoring Mode (v2)
+
+Binary judge templates (`*-binary.md`) convert each dimension into 3-4 yes/no questions.
+Score = (yes answers / total questions) × 10. More stable than 1-10 subjective scoring
+because each question is a concrete, verifiable check. Supports mixed format — some
+dimensions can be binary while others stay numeric.
+
 ## Output
 
 Each run creates `runs/<timestamp>/` containing:
@@ -98,4 +111,4 @@ Edit `review_config.yaml` to adjust:
 python3 -m pytest test_smoke.py -v
 ```
 
-Tests cover: decision logic, phase detection, writer validation, stop rules, budget cap, judge failure handling.
+Tests cover: decision logic, phase detection, writer validation, stop rules, budget cap, judge failure handling, feedback-forward, binary eval scoring.
