@@ -85,6 +85,53 @@ def _parse_judge_json(raw_output: str) -> dict | None:
     return None
 
 
+# ─────────────────────────────────────────────
+# Binary Eval Scoring (v2)
+# ─────────────────────────────────────────────
+
+def convert_binary_to_numeric(checklist: dict) -> float:
+    """Convert a binary checklist {item: True/False} to a 0-10 score.
+
+    Score = (items answered True / total items) × 10.
+    Empty checklist → 0.0. More stable than 1-10 subjective scoring
+    because each item is a simple yes/no decision.
+    """
+    if not checklist:
+        return 0.0
+    true_count = sum(1 for v in checklist.values() if v)
+    return round((true_count / len(checklist)) * 10, 2)
+
+
+def parse_binary_judge_output(raw: dict) -> tuple[dict, str | None]:
+    """Parse judge output that may contain binary checklists or numeric scores.
+
+    Handles two formats:
+    1. Binary: {"dimension": {"check1": true, "check2": false}, ...}
+       → converts each dimension's checklist to a 0-10 score
+    2. Numeric: {"dimension": 7.5, ...}
+       → passes through unchanged
+
+    Mixed formats are OK. The "critique" key is always extracted as text.
+    Returns (scores_dict, critique_text).
+    """
+    # Use .get() instead of .pop() to avoid mutating the caller's dict
+    critique = raw.get("critique", None) if isinstance(raw, dict) else None
+    scores = {}
+
+    for key, value in raw.items():
+        if key == "critique":
+            continue  # already extracted above
+        if isinstance(value, dict) and all(isinstance(v, bool) for v in value.values()):
+            # Binary checklist → convert to numeric
+            scores[key] = convert_binary_to_numeric(value)
+        elif isinstance(value, (int, float)):
+            # Direct numeric score → pass through
+            scores[key] = float(value)
+        # Skip non-score entries (strings, lists, etc.)
+
+    return scores, critique
+
+
 def call_codex_judge(
     template_name: str,
     analysis_text: str,
@@ -161,12 +208,13 @@ def _run_codex_with_retry(
                     continue  # retry once
                 return None, None
 
-            # Extract critique (free-text) and scores (numeric values)
-            critique = parsed.pop("critique", None)
-            scores = {k: float(v) for k, v in parsed.items() if isinstance(v, (int, float))}
+            # Extract scores + critique. Handles both formats:
+            # - Numeric: {"dim": 7.5, ...} (original 1-10 scoring)
+            # - Binary: {"dim": {"check": true, ...}, ...} (v2 checklist scoring)
+            scores, critique = parse_binary_judge_output(parsed)
 
             if not scores:
-                print(f"  [WARN] No numeric scores in Codex output (attempt {attempt + 1})")
+                print(f"  [WARN] No scores in Codex output (attempt {attempt + 1})")
                 if attempt == 0:
                     continue
                 return None, None
