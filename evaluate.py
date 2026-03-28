@@ -237,23 +237,146 @@ def _run_codex_with_retry(
 
 
 
+def call_novita_judge(
+    template_name: str,
+    analysis_text: str,
+    model: str = "deepseek/deepseek-v3.2",
+    timeout_seconds: int = 120,
+) -> tuple[dict | None, str | None]:
+    """Call a judge via Novita AI's OpenAI-compatible API.
+
+    Reads the same prompt templates as call_codex_judge but uses Novita
+    instead of Codex CLI. Eliminates Codex rate limit dependency.
+
+    Returns (scores_dict, critique_text) or (None, None) on failure.
+    """
+    import os
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print("  [WARN] 'openai' package not installed for Novita judge")
+        return None, None
+
+    api_key = os.environ.get("NOVITA_API_KEY")
+    if not api_key:
+        print("  [WARN] NOVITA_API_KEY not set — cannot use Novita judge")
+        return None, None
+
+    template_path = JUDGE_TEMPLATES_DIR / template_name
+    if not template_path.exists():
+        print(f"  [WARN] Judge template not found: {template_path}")
+        return None, None
+
+    template_text = template_path.read_text()
+
+    client = OpenAI(
+        base_url="https://api.novita.ai/openai",
+        api_key=api_key,
+    )
+
+    for attempt in range(2):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=4096,
+                messages=[
+                    {"role": "system", "content": template_text},
+                    {"role": "user", "content": analysis_text},
+                ],
+                temperature=0.3,  # lower temp for more consistent scoring
+                timeout=timeout_seconds,
+            )
+            raw = response.choices[0].message.content.strip()
+            parsed = _parse_judge_json(raw)
+
+            if parsed is None:
+                print(f"  [WARN] Failed to parse JSON from Novita judge (attempt {attempt + 1})")
+                if attempt == 0:
+                    continue
+                return None, None
+
+            scores, critique = parse_binary_judge_output(parsed)
+            if not scores:
+                print(f"  [WARN] No scores in Novita judge output (attempt {attempt + 1})")
+                if attempt == 0:
+                    continue
+                return None, None
+
+            return scores, critique
+
+        except Exception as e:
+            print(f"  [WARN] Novita judge error: {e} (attempt {attempt + 1})")
+            if attempt == 0:
+                continue
+            return None, None
+
+    return None, None
+
+
+# Global judge settings — set by main() or loop_runner
+_judge_provider = "codex"
+_judge_model = "deepseek/deepseek-v3.2"
+_judge_format = "numeric"  # "numeric", "binary", or "hybrid"
+
+
+def set_judge_provider(provider: str, model: str = "deepseek/deepseek-v3.2"):
+    """Set the judge provider globally. Called by loop_runner before evaluation."""
+    global _judge_provider, _judge_model
+    _judge_provider = provider
+    _judge_model = model
+
+
+def set_judge_format(fmt: str):
+    """Set judge format: 'numeric', 'binary', or 'hybrid'."""
+    global _judge_format
+    if fmt not in ("numeric", "binary", "hybrid"):
+        raise ValueError(f"Unknown judge format: {fmt}. Use numeric, binary, or hybrid.")
+    _judge_format = fmt
+
+
+def _get_template_name(base: str) -> str:
+    """Map base judge name to the correct template file for current format.
+
+    base is 'substance' or 'communication'.
+    Returns the filename in references/ to use.
+    """
+    if _judge_format == "binary":
+        return f"{base}-judge-binary.md"
+    elif _judge_format == "hybrid":
+        return f"{base}-judge-hybrid.md"
+    else:
+        return f"{base}-judge.md"
+
+
+def _call_judge(template_name: str, analysis_text: str) -> tuple[dict | None, str | None]:
+    """Route to the active judge provider."""
+    if _judge_provider == "novita":
+        return call_novita_judge(template_name, analysis_text, model=_judge_model)
+    else:
+        return call_codex_judge(template_name, analysis_text)
+
+
 def call_judges_parallel(
     analysis_text: str, config: dict
 ) -> tuple[dict | None, dict | None, str | None, str | None]:
     """Run both judges in parallel via ThreadPoolExecutor.
 
+    Routes to the correct template based on _judge_format (numeric/binary/hybrid).
     Returns (substance_scores, communication_scores,
              substance_critique, communication_critique).
     Any of these can be None if the corresponding judge failed.
     """
     from concurrent.futures import ThreadPoolExecutor
 
+    sub_template = _get_template_name("substance")
+    comm_template = _get_template_name("communication")
+
     with ThreadPoolExecutor(max_workers=2) as executor:
         sub_future = executor.submit(
-            call_codex_judge, "substance-judge.md", analysis_text
+            _call_judge, sub_template, analysis_text
         )
         comm_future = executor.submit(
-            call_codex_judge, "communication-judge.md", analysis_text
+            _call_judge, comm_template, analysis_text
         )
 
         sub_scores, sub_critique = sub_future.result()
@@ -328,8 +451,10 @@ def evaluate_with_averaging(
     all_results = []
 
     for i in range(num_runs):
-        sub_scores, _ = call_codex_judge("substance-judge.md", analysis_text)
-        comm_scores, _ = call_codex_judge("communication-judge.md", analysis_text)
+        sub_template = _get_template_name("substance")
+        comm_template = _get_template_name("communication")
+        sub_scores, _ = _call_judge(sub_template, analysis_text)
+        comm_scores, _ = _call_judge(comm_template, analysis_text)
         # Skip this run if either judge failed (returned None)
         if sub_scores is None or comm_scores is None:
             print(f"  [WARN] Judge failure on run {i + 1}/{num_runs} — skipping")
