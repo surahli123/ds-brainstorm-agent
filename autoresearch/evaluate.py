@@ -55,7 +55,7 @@ def load_config(config_path: str = "review_config.yaml") -> dict:
 # DRY helper: call_codex_judge() handles temp file, timeout, retry, parsing.
 
 # Path to judge prompt templates (relative to project root)
-JUDGE_TEMPLATES_DIR = Path(__file__).parent / "skills" / "ds-autoresearch" / "references"
+JUDGE_TEMPLATES_DIR = Path(__file__).parent / "judges"
 
 
 def _parse_judge_json(raw_output: str) -> dict | None:
