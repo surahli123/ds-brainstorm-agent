@@ -12,6 +12,7 @@
 - `dimension_format` config in `review_config.yaml` maps each dimension to binary/numeric
 - Human pause at plateau — prints actionable gaps from judge critiques instead of just halting
 - Live dashboard (`dashboard.html`) with Chart.js step chart, bar chart, dimension bars
+- Hybrid calibration utility (`calibrate_hybrid.py`) to compare numeric vs hybrid judges and recommend binary-weight scaling
 - 18 new tests (65 total): provider routing, auto-approve, hybrid parsing, mocked API calls
 
 ### Changed
@@ -27,6 +28,7 @@
 - Binary judge stdev: 0.507 (worse than numeric 3-run avg at 0.20) — led to hybrid design
 - Per-dimension binary stability: statistical_rigor stdev 0.000, evidence_conclusion stdev 2.236
 - Plateau confirmed at ~7.5 (content ceiling, not writing ceiling)
+- Calibration helper tests: 5 added, suite now 70 passing locally
 
 ## [1.3.0] - 2026-03-25 — Feedback-Forward + Binary Eval (v2)
 
