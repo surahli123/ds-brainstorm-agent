@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.4.0] - 2026-03-28 — Novita Provider, Hybrid Judges, Auto-Approve
+
+### Added
+- Novita AI writer provider (`--provider novita`), supports DeepSeek V3.2, MiniMax M2.7, GLM-4.7-Flash
+- Novita AI judge provider (`--judge-provider novita --judge-model`)
+- Auto-approve flag (`--auto-approve`) skips human gate for marginal improvements
+- Multi-run judge averaging (`--runs N`) with first-run score reuse (N-1 additional calls, not N+2)
+- Hybrid judge format (`--judge-format hybrid`) — binary for objective dims (stdev 0.0), numeric for subjective
+- Mixed-format judge templates: `substance-judge-hybrid.md`, `communication-judge-hybrid.md`
+- `dimension_format` config in `review_config.yaml` maps each dimension to binary/numeric
+- Human pause at plateau — prints actionable gaps from judge critiques instead of just halting
+- Live dashboard (`dashboard.html`) with Chart.js step chart, bar chart, dimension bars
+- Hybrid calibration utility (`calibrate_hybrid.py`) to compare numeric vs hybrid judges and recommend binary-weight scaling
+- 18 new tests (65 total): provider routing, auto-approve, hybrid parsing, mocked API calls
+
+### Changed
+- `--model` default is now None (auto-selects per provider: deepseek/deepseek-v3.2 for novita, claude-sonnet for anthropic)
+- Git init in temp workdir uses `autoresearch` branch (avoids global pre-commit hook blocking main)
+- `evaluate_with_averaging` routes through `_call_judge` (supports novita + codex)
+- `call_judges_parallel` routes through `_get_template_name` (supports numeric/binary/hybrid)
+- Cycle evaluation reuses first judge run scores (fixes DRY violation — N-1 calls instead of N+2)
+- Dependency validation checks judge provider requirements (novita needs NOVITA_API_KEY + openai package)
+
+### Validated
+- Full loop run on eBay marketing analysis: 6.10 → 7.77 (+27%) in 5 automated cycles
+- Binary judge stdev: 0.507 (worse than numeric 3-run avg at 0.20) — led to hybrid design
+- Per-dimension binary stability: statistical_rigor stdev 0.000, evidence_conclusion stdev 2.236
+- Plateau confirmed at ~7.5 (content ceiling, not writing ceiling)
+- Calibration helper tests: 5 added, suite now 70 passing locally
+
+## [1.3.0] - 2026-03-25 — Feedback-Forward + Binary Eval (v2)
+
+### Added
+- Feedback-forward: judge critiques passed to writer via JUDGE FEEDBACK section
+  - Writer now knows WHY scores are low, targets specific weaknesses
+  - Full critique from previous cycle included in writer prompt
+- Binary eval scoring mode
+  - `convert_binary_to_numeric()` and `parse_binary_judge_output()` in evaluate.py
+  - Binary judge templates: 16 yes/no questions per judge (substance + communication)
+  - Score = (true answers / total) × 10 — more stable than 1-10 subjective
+  - Transparent format detection: numeric and binary judges work interchangeably
+- 10 new tests (47 total): feedback-forward assembly + binary scoring math
+- Global pre-commit hook (`~/.git-hooks/pre-commit`) blocks commits to main/master
+
+### Changed
+- `_run_codex_with_retry` uses `parse_binary_judge_output` for format-agnostic score extraction
+- Cycle summary no longer duplicates critique text (full critiques go via judge_feedback)
+- Writer function signatures accept `judge_feedback` param (backward-compatible)
+
+### Fixed
+- Codex CLI invocation: `codex exec -s read-only -` via stdin (not `--read` flag)
+
 ## [1.2.0] - 2026-03-24 — DS AutoResearch Loop (v1)
 
 ### Added

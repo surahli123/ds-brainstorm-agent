@@ -35,6 +35,27 @@ communication_dimensions:
   executive_summary_clarity: 1.2    # high priority — first thing stakeholders read
 
 
+# ── Dimension Scoring Format ───────────────────────────
+# Controls which dimensions use binary (yes/no) vs numeric (1-10) scoring.
+# Binary: near-zero noise (stdev 0.0) but only works for objective checkpoints.
+# Numeric: noisier (stdev ~0.3 with averaging) but handles subjective quality.
+# Validated 2026-03-28: statistical_rigor and data_interpretation had stdev 0.000
+# with binary. evidence_conclusion and methodology had stdev >1.0.
+
+dimension_format:
+  # Substance dimensions
+  statistical_rigor: binary              # stdev 0.000 — perfectly stable
+  methodology_soundness: numeric         # stdev 1.369 — needs averaging
+  evidence_conclusion_alignment: numeric # stdev 2.236 — needs averaging
+  data_interpretation_accuracy: binary   # stdev 0.000 — perfectly stable
+
+  # Communication dimensions
+  narrative_flow: numeric                # stdev 1.369 — needs averaging
+  audience_calibration: numeric          # stdev 1.118 — needs averaging
+  visualization_effectiveness: numeric   # stdev 1.369 — needs averaging
+  executive_summary_clarity: numeric     # stdev 1.118 — needs averaging
+
+
 # ── Substance Subagent Rubric ───────────────────────────
 # Each dimension has a description and scoring anchors.
 # Pass these to your substance subagent so it scores
