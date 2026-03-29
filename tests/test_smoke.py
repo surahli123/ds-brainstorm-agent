@@ -568,7 +568,8 @@ class TestConfigValidation:
         """Weights summing to 1.0 should load without error."""
         from evaluate import load_config
         # The real config file has weights summing to 1.0
-        config = load_config("review_config.yaml")
+        config_path = str(Path(__file__).parent.parent / "autoresearch" / "review_config.yaml")
+        config = load_config(config_path)
         assert config["weights"]["substance"] + config["weights"]["communication"] == pytest.approx(1.0)
 
     def test_weighted_avg_empty_scores(self, sample_config):

@@ -1,8 +1,30 @@
-# Development working files
-dev/scratch/
+# Development artifacts (keep locally, don't track)
+dev/
+docs/handover-*
+docs/design-*
+docs/superpowers/
+*.bak
+runs/
+eval_log.jsonl
+hybrid-calibration-report.json
+session-record.md
+claude-code-prompts.md
+
+# Personal data
+stakeholders/
+
+# Claude Code internals
+.claude/commands/
+.claude/worktrees/
+
+# Tool artifacts
+.gstack/
+.omc/
+.pytest_cache/
+
+# Python
 *.pyc
 __pycache__/
-.DS_Store
 
 # Environment
 .env
@@ -12,9 +34,15 @@ __pycache__/
 .vscode/
 .idea/
 
-# Session artifacts (tracked in dev/sessions/, not root)
-*.tmp
+# OS
+.DS_Store
 
-# Stakeholder profiles (sensitive — local only)
-stakeholders/
-.gstack/
+# Test artifacts
+test_analysis.md
+test_analysis.md.bak
+ebay_marketing_analysis_original.md
+ebay_marketing_analysis_original.md.bak
+
+# Legacy files (not part of restructured repo)
+dry_run.py
+full_test_run.py
