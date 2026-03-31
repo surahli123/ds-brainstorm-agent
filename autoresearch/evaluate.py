@@ -371,6 +371,11 @@ def call_judges_parallel(
     sub_template = _get_template_name("substance")
     comm_template = _get_template_name("communication")
 
+    if _judge_provider == "novita":
+        sub_scores, sub_critique = _call_judge(sub_template, analysis_text)
+        comm_scores, comm_critique = _call_judge(comm_template, analysis_text)
+        return sub_scores, comm_scores, sub_critique, comm_critique
+
     with ThreadPoolExecutor(max_workers=2) as executor:
         sub_future = executor.submit(
             _call_judge, sub_template, analysis_text

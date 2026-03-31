@@ -77,6 +77,10 @@ def validate_writer_output(text: str, original: str) -> bool:
         return False
 
     stripped = text.strip()
+    original_stripped = original.strip()
+
+    if stripped == original_stripped:
+        return False
 
     # Check for refusal patterns (case-insensitive)
     refusal_patterns = [
@@ -230,6 +234,59 @@ def should_halt_judge_failures(history: list[dict]) -> bool:
 def budget_exceeded(current_cycle: int, max_total: int) -> bool:
     """Check if total cycle count (including skips) hit the hard cap."""
     return current_cycle >= max_total
+
+
+def _average_results(
+    first_result: dict,
+    analysis_text: str,
+    config: dict,
+    num_runs: int,
+) -> dict:
+    """Run N-1 additional evaluations and average with first_result.
+
+    Reuses first_result (already computed from call_judges_parallel)
+    so we only make N-1 additional judge calls, not N.
+
+    Returns the averaged result dict with score_stdev.
+    Falls back to first_result if all additional runs fail.
+    """
+    if num_runs <= 1:
+        return first_result
+
+    additional_results = [first_result]
+    for i in range(num_runs - 1):
+        extra_sub, extra_comm, _, _ = evaluate.call_judges_parallel(
+            analysis_text, config
+        )
+        if extra_sub is not None and extra_comm is not None:
+            additional_results.append(
+                evaluate.compute_composite(extra_sub, extra_comm, config)
+            )
+        else:
+            print(f"  [WARN] Averaging run {i + 2}/{num_runs} failed — skipping")
+
+    if len(additional_results) <= 1:
+        return first_result
+
+    avg_composite = statistics.mean(r["composite"] for r in additional_results)
+    score_stdev = statistics.stdev(r["composite"] for r in additional_results)
+    avg_sub_scores = {
+        dim: round(statistics.mean(r["substance_scores"][dim] for r in additional_results), 2)
+        for dim in first_result["substance_scores"]
+    }
+    avg_comm_scores = {
+        dim: round(statistics.mean(r["communication_scores"][dim] for r in additional_results), 2)
+        for dim in first_result["communication_scores"]
+    }
+    return {
+        "composite": round(avg_composite, 4),
+        "substance_avg": round(statistics.mean(r["substance_avg"] for r in additional_results), 4),
+        "communication_avg": round(statistics.mean(r["communication_avg"] for r in additional_results), 4),
+        "score_stdev": round(score_stdev, 4),
+        "num_runs": len(additional_results),
+        "substance_scores": avg_sub_scores,
+        "communication_scores": avg_comm_scores,
+    }
 
 
 # ─────────────────────────────────────────────
@@ -646,6 +703,16 @@ def _write_summary(run_dir: Path, summary: dict):
         json.dump(summary, f, indent=2)
 
 
+def resolve_config_path(config_path: str, project_root: Path) -> Path:
+    """Resolve config paths relative to cwd first, then autoresearch/."""
+    candidate = Path(config_path)
+    if candidate.is_absolute():
+        return candidate
+    if candidate.exists():
+        return candidate.resolve()
+    return project_root / candidate
+
+
 # ─────────────────────────────────────────────
 # Human Gate
 # ─────────────────────────────────────────────
@@ -692,7 +759,7 @@ def run_loop(args):
     system_prompt = _read_program_prompt(project_root)
 
     # Load config
-    config = evaluate.load_config(args.config)
+    config = evaluate.load_config(str(resolve_config_path(args.config, project_root)))
 
     # Set up isolated working directory
     input_path = Path(args.input).resolve()
@@ -743,48 +810,12 @@ def run_loop(args):
         print("Check that 'codex' is installed and working.")
         sys.exit(1)
 
-    # Multi-run averaging: run additional evaluations and average all scores.
-    # We already have one run from call_judges_parallel above, so only need
-    # (num_runs - 1) additional runs to avoid wasting Codex calls.
+    # Multi-run averaging: reuse first run, add N-1 more, average all.
     first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
-    if num_runs > 1:
-        additional_results = [first_result]
-        for i in range(num_runs - 1):
-            extra_sub, extra_comm, _, _ = evaluate.call_judges_parallel(analysis_text, config)
-            if extra_sub is not None and extra_comm is not None:
-                additional_results.append(
-                    evaluate.compute_composite(extra_sub, extra_comm, config)
-                )
-            else:
-                print(f"  [WARN] Baseline averaging run {i + 2}/{num_runs} failed — skipping")
-
-        if len(additional_results) > 1:
-            avg_composite = statistics.mean(r["composite"] for r in additional_results)
-            score_stdev = statistics.stdev(r["composite"] for r in additional_results)
-            # Average per-dimension scores
-            avg_sub_scores = {
-                dim: round(statistics.mean(r["substance_scores"][dim] for r in additional_results), 2)
-                for dim in first_result["substance_scores"]
-            }
-            avg_comm_scores = {
-                dim: round(statistics.mean(r["communication_scores"][dim] for r in additional_results), 2)
-                for dim in first_result["communication_scores"]
-            }
-            baseline = {
-                "composite": round(avg_composite, 4),
-                "substance_avg": round(statistics.mean(r["substance_avg"] for r in additional_results), 4),
-                "communication_avg": round(statistics.mean(r["communication_avg"] for r in additional_results), 4),
-                "score_stdev": round(score_stdev, 4),
-                "num_runs": len(additional_results),
-                "substance_scores": avg_sub_scores,
-                "communication_scores": avg_comm_scores,
-            }
-            print(f"Baseline composite: {baseline['composite']} (averaged over {len(additional_results)} runs, stdev={baseline['score_stdev']:.3f})")
-        else:
-            baseline = first_result
-            print(f"Baseline composite: {baseline['composite']} (single run — additional runs failed)")
+    baseline = _average_results(first_result, analysis_text, config, num_runs)
+    if "score_stdev" in baseline:
+        print(f"Baseline composite: {baseline['composite']} (averaged over {baseline['num_runs']} runs, stdev={baseline['score_stdev']:.3f})")
     else:
-        baseline = first_result
         print(f"Baseline composite: {baseline['composite']}")
     print(evaluate.format_output(baseline))
 
@@ -959,48 +990,11 @@ def run_loop(args):
             })
             continue
 
-        # Multi-run averaging for more stable scoring.
-        # Reuse first run's scores (from call_judges_parallel above) — only
-        # run N-1 additional evaluations to avoid wasting API calls.
+        # Multi-run averaging: reuse first run, add N-1 more, average all.
         first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
-        if num_runs > 1:
-            additional_results = [first_result]
-            for i in range(num_runs - 1):
-                extra_sub, extra_comm, _, _ = evaluate.call_judges_parallel(
-                    improved_text, config
-                )
-                if extra_sub is not None and extra_comm is not None:
-                    additional_results.append(
-                        evaluate.compute_composite(extra_sub, extra_comm, config)
-                    )
-                else:
-                    print(f"  [WARN] Averaging run {i + 2}/{num_runs} failed — skipping")
-
-            if len(additional_results) > 1:
-                avg_composite = statistics.mean(r["composite"] for r in additional_results)
-                score_stdev = statistics.stdev(r["composite"] for r in additional_results)
-                avg_sub_scores = {
-                    dim: round(statistics.mean(r["substance_scores"][dim] for r in additional_results), 2)
-                    for dim in first_result["substance_scores"]
-                }
-                avg_comm_scores = {
-                    dim: round(statistics.mean(r["communication_scores"][dim] for r in additional_results), 2)
-                    for dim in first_result["communication_scores"]
-                }
-                new_result = {
-                    "composite": round(avg_composite, 4),
-                    "substance_avg": round(statistics.mean(r["substance_avg"] for r in additional_results), 4),
-                    "communication_avg": round(statistics.mean(r["communication_avg"] for r in additional_results), 4),
-                    "score_stdev": round(score_stdev, 4),
-                    "num_runs": len(additional_results),
-                    "substance_scores": avg_sub_scores,
-                    "communication_scores": avg_comm_scores,
-                }
-                print(f"  Score stdev: {score_stdev:.3f} (over {len(additional_results)} runs)")
-            else:
-                new_result = first_result
-        else:
-            new_result = first_result
+        new_result = _average_results(first_result, improved_text, config, num_runs)
+        if "score_stdev" in new_result:
+            print(f"  Score stdev: {new_result['score_stdev']:.3f} (over {new_result['num_runs']} runs)")
         action = decide_action(current_best, new_result, config)
         improvement = new_result["composite"] - current_best["composite"]
 
