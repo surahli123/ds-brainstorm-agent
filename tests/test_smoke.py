@@ -535,6 +535,13 @@ class TestWriterOutputValidation:
         text = "# Short\n\nToo short."  # way under 20%
         assert validate_writer_output(text, original) is False
 
+    def test_identical_output_detected(self):
+        """Writer output identical to input should fail validation."""
+        from loop_runner import validate_writer_output
+
+        original = "# Analysis\n\nThis draft already exists.\n\n## Methods\n\nSame content."
+        assert validate_writer_output(original, original) is False
+
     def test_sorry_prefix_detected(self):
         """Writer starting with 'I'm sorry' fails validation."""
         from loop_runner import validate_writer_output
@@ -579,6 +586,16 @@ class TestConfigValidation:
         # This should raise an error rather than silently return 0
         with pytest.raises(Exception):
             compute_composite({}, {}, sample_config)
+
+    def test_default_config_path_resolves_from_autoresearch_dir(self):
+        """Repo-root invocations should still find autoresearch/review_config.yaml."""
+        from loop_runner import resolve_config_path
+
+        project_root = Path(__file__).parent.parent / "autoresearch"
+
+        resolved = resolve_config_path("review_config.yaml", project_root)
+
+        assert resolved == project_root / "review_config.yaml"
 
 
 class TestCycleSummaryBuilder:
@@ -848,6 +865,38 @@ class TestJudgeProviderRouting:
         import evaluate
         set_judge_provider("codex")
         assert evaluate._judge_provider == "codex"
+
+    def test_novita_judges_run_sequentially(self, monkeypatch):
+        """Novita judge calls should bypass the parallel executor path."""
+        import concurrent.futures
+        import evaluate
+
+        calls = []
+
+        def fake_call_judge(template_name, analysis_text):
+            calls.append((template_name, analysis_text))
+            return {"score": 1.0}, f"critique for {template_name}"
+
+        class FailExecutor:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("ThreadPoolExecutor should not be used for Novita")
+
+        monkeypatch.setattr(evaluate, "_call_judge", fake_call_judge)
+        monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", FailExecutor)
+        evaluate.set_judge_provider("novita", "minimax/minimax-m2.7")
+        evaluate.set_judge_format("hybrid")
+
+        sub_scores, comm_scores, sub_critique, comm_critique = evaluate.call_judges_parallel(
+            "analysis text", {}
+        )
+
+        assert len(calls) == 2
+        assert calls[0][1] == "analysis text"
+        assert calls[1][1] == "analysis text"
+        assert sub_scores == {"score": 1.0}
+        assert comm_scores == {"score": 1.0}
+        assert "substance" in sub_critique
+        assert "communication" in comm_critique
 
 
 class TestNovitaWriterMocked:

@@ -77,6 +77,10 @@ def validate_writer_output(text: str, original: str) -> bool:
         return False
 
     stripped = text.strip()
+    original_stripped = original.strip()
+
+    if stripped == original_stripped:
+        return False
 
     # Check for refusal patterns (case-insensitive)
     refusal_patterns = [
@@ -646,6 +650,16 @@ def _write_summary(run_dir: Path, summary: dict):
         json.dump(summary, f, indent=2)
 
 
+def resolve_config_path(config_path: str, project_root: Path) -> Path:
+    """Resolve config paths relative to cwd first, then autoresearch/."""
+    candidate = Path(config_path)
+    if candidate.is_absolute():
+        return candidate
+    if candidate.exists():
+        return candidate.resolve()
+    return project_root / candidate
+
+
 # ─────────────────────────────────────────────
 # Human Gate
 # ─────────────────────────────────────────────
@@ -692,7 +706,7 @@ def run_loop(args):
     system_prompt = _read_program_prompt(project_root)
 
     # Load config
-    config = evaluate.load_config(args.config)
+    config = evaluate.load_config(str(resolve_config_path(args.config, project_root)))
 
     # Set up isolated working directory
     input_path = Path(args.input).resolve()
