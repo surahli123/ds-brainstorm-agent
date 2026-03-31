@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.5.0] - 2026-03-30 — Repo Restructure, RovoDev Skill, DRY Fix
+
+### Changed
+- Restructured repo into `autoresearch/` (loop engine) and `brainstorm/` (Socratic debate) modules
+- Judge templates moved to `autoresearch/judges/`
+- Tests moved to `tests/` with `conftest.py` for path resolution
+- Example analyses moved to `examples/`
+- Extracted `_average_results()` from duplicated baseline + cycle averaging logic (-20 lines)
+- Rewrote CLAUDE.md for restructured paths, added strategies and anti-patterns from session learnings
+
+### Added
+- RovoDev pure-skill deployment: `rovodev-skill/` with orchestrator + writer + 2 judge subagents (5 per-dimension reference files each)
+- Polished README covering both tools, CLI reference, scoring dimensions, supported models
+- `tests/conftest.py` for sys.path resolution after restructure
+- 3 new tests (73 total)
+
+### Removed
+- Dev artifacts from tracking: session logs, handover docs, design specs, personal commands
+- Unrelated commands from `.claude/commands/`
+
+### Validated
+- Hybrid loop end-to-end: runs without errors, hybrid judges produce correct binary + numeric scores
+- Hybrid calibration: no composite inflation (7.02 hybrid vs 7.41 numeric)
+- CLI invocation from `autoresearch/` directory verified
+
 ## [1.4.0] - 2026-03-28 — Novita Provider, Hybrid Judges, Auto-Approve
 
 ### Added
