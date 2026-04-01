@@ -52,7 +52,8 @@
           "required_fields": {
             "agreements": "non-empty array (length >= 1)",
             "tensions": "non-empty array (length >= 1)",
-            "key_question": "non-empty string"
+            "key_question": "non-empty string",
+            "blind_spots": "array (may be empty for narrow questions, but field must exist)"
           }
         },
         "socratic_dialogue": {
@@ -60,7 +61,8 @@
           "required_fields": {
             "dialogue_history": "array with length >= 2 (1 challenger + 1 user minimum)"
           },
-          "dialogue_entry_fields": ["role", "references_persona", "round", "content"]
+          "dialogue_entry_fields": ["role", "references_persona", "round", "content"],
+          "simulated_user_response": "test case file contains ## Simulated User Response section — use it as the user's reply in the Socratic loop"
         },
         "json_parseable": {
           "check": "Structured output JSON is valid and parseable"
@@ -143,7 +145,8 @@
           "required_fields": {
             "agreements": "non-empty array (length >= 1)",
             "tensions": "non-empty array (length >= 1)",
-            "key_question": "non-empty string"
+            "key_question": "non-empty string",
+            "blind_spots": "array (may be empty for narrow questions, but field must exist)"
           }
         },
         "socratic_dialogue": {
@@ -151,7 +154,8 @@
           "required_fields": {
             "dialogue_history": "array with length >= 2 (1 challenger + 1 user minimum)"
           },
-          "dialogue_entry_fields": ["role", "references_persona", "round", "content"]
+          "dialogue_entry_fields": ["role", "references_persona", "round", "content"],
+          "simulated_user_response": "test case file contains ## Simulated User Response section — use it as the user's reply in the Socratic loop"
         },
         "json_parseable": {
           "check": "Structured output JSON is valid and parseable"

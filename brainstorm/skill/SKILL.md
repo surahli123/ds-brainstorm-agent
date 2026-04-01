@@ -483,6 +483,14 @@ Format the synthesis as a conversational challenge (not a report). Use this stru
 
 [Tension 3, if applicable — staged as exchange]
 
+**What all three missed:**
+
+[Blind spot 1 — from Step 3.5 of synthesis]
+
+[Blind spot 2, if applicable]
+
+[Omit this section if no blind spots were found]
+
 **The key question you need to answer:**
 
 [Key question framed directly to the user]
@@ -500,9 +508,12 @@ all 3 persona outputs from Phase 1.
 
 ### Tracking State
 
-Maintain a mental ledger of concerns from Phase 1 across two categories:
+Maintain a mental ledger of concerns across three categories:
 - **Addressed:** The user has responded to this concern substantively.
 - **Unaddressed:** The user has not yet engaged with this concern.
+- **Blind spots:** Gaps identified in Step 3.5 of the synthesis (things ALL THREE
+  perspectives missed). These are tracked separately because they represent shared
+  assumptions that no persona challenged — they're often the most valuable pushback.
 
 Also track:
 - `round_count`: starts at 1 after the user's first response to the synthesis
@@ -529,6 +540,27 @@ Construct your response using this logic:
 
 **If the user deflected or gave a vague answer:**
 > *"I hear you, but that doesn't resolve [persona name]'s concern. Specifically: [restate with more precision]. What would you concretely do about this?"*
+
+### Step 3.2.1: Blind Spot Escalation
+
+**When to escalate:** Starting from round 2 onwards, if any blind spots from Step 3.5
+of the synthesis remain unaddressed by the user's responses, escalate them as part of
+your pushback. If `--rounds` is set to 1, blind spots still appear in the synthesis
+output but won't be escalated in dialogue. Blind spots are assumptions that ALL THREE
+perspectives shared — they're easy to overlook because no persona flagged them.
+
+**How to escalate:**
+> *"One thing none of the three perspectives caught: [blind spot]. This matters because
+> [why it could affect the analysis]. How does your plan handle this?"*
+
+**Rules:**
+- Escalate at most 1 blind spot per round — don't pile on.
+- If the user addressed the blind spot indirectly (their response happens to cover it
+  even though they weren't responding to it), move it to "addressed" and don't escalate.
+- If all blind spots have been addressed or the user says they're not relevant, drop them.
+  Don't force a concern that the user has considered and dismissed.
+- Blind spot escalation has the same weight as persona concerns — it's a pushback source,
+  not a higher-priority override.
 
 ### Step 3.3: Re-invoke a Subagent (Rare, Only When Needed)
 
@@ -727,7 +759,10 @@ If search was skipped entirely (Level 1+ degradation), set all three arrays to `
       }
     ],
     "key_question": "the most important tension framed as a question",
-    "key_question_resolved": true
+    "key_question_resolved": true,
+    "blind_spots": [
+      "specific description of what all 3 perspectives missed — an unquestioned assumption, missing stakeholder, missing alternative, or missing risk"
+    ]
   },
   "dialogue_history": [
     {
@@ -777,7 +812,8 @@ the conversation.
 - [ ] Methodology Critic dispatched and returned
 - [ ] Stakeholder Advocate dispatched and returned
 - [ ] Pragmatist dispatched and returned
-- [ ] Synthesis produced with agreements + tensions
+- [ ] Synthesis produced with agreements + tensions + blind spots
 - [ ] Socratic dialogue loop completed (user satisfied or max rounds)
+- [ ] Blind spots escalated if unaddressed after round 2 (N/A if none found or --rounds 1)
 - [ ] Human-readable summary produced
 - [ ] Machine-readable JSON produced

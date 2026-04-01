@@ -72,22 +72,26 @@ When evaluating a brainstorm output against this rubric:
 
 ## Dimension 3: Synthesis Quality (Weight: 20%)
 
-**Question:** Does the synthesis surface REAL tensions between personas? Or is it consensus mush?
+**Question:** Does the synthesis surface REAL tensions between personas AND identify what all three missed?
 
 | Score | Description | What to look for |
 |-------|-------------|------------------|
-| 1 | Consensus summary | Synthesis says "all three personas agree that..." with no tensions. Just a bulleted summary of each persona's output. |
-| 2 | Weak tensions | Tensions array is non-empty but the tensions are trivial or manufactured ("Methodology Critic wants rigor while Pragmatist wants speed" without specifics). |
-| 3 | Identified tensions | Real tensions exist and are named. But they're stated as summaries, not staged as exchanges. |
-| 4 | Staged disagreements | Tensions are presented as explicit back-and-forth: "Methodology Critic argues X because Y. But Pragmatist counters: Z because W." The reader understands both sides. |
-| 5 | Decision-forcing tensions | Tensions are staged AND the synthesis makes clear what the user must DECIDE -- it doesn't resolve the tension for them. The key_question field captures a genuine dilemma, not a softball. |
+| 1 | Consensus summary | Synthesis says "all three personas agree that..." with no tensions. No blind spots identified. Just a bulleted summary of each persona's output. |
+| 2 | Weak tensions | Tensions array is non-empty but trivial or manufactured. Blind spots section absent or generic ("consider more factors"). |
+| 3 | Identified tensions | Real tensions exist and are named, but stated as summaries rather than staged exchanges. Blind spots may be present but generic. |
+| 4 | Staged disagreements + basic blind spots | Tensions are presented as explicit back-and-forth. Blind spots section exists with at least 1 specific finding that names a concrete assumption or gap none of the 3 personas questioned. |
+| 5 | Decision-forcing tensions + insightful blind spots | Tensions are staged AND decision-forcing. Blind spots are specific, non-obvious, and grounded — e.g., "none of the three asked whether your click logs include bot traffic, which inflates engagement metrics by 10-20%." The blind spots change how the user thinks about the problem. |
 
 **Red flags for low scores:**
 - Synthesis tensions array has items like "there are tradeoffs to consider"
 - key_question is generic ("what approach should you take?") rather than specific to the analysis
 - Agreements section is longer than tensions section (usually a sign of mush)
+- Blind spots section says "consider additional factors" without naming which factors or why they matter
+- Blind spots repeat concerns already raised by individual personas (these aren't blind spots — they're duplicates)
 
-**What discriminates 3 from 4:** At score 3, the synthesis says "The Methodology Critic is concerned about position bias while the Pragmatist questions data availability." At score 4, it says "The Methodology Critic argues you can't trust NDCG without debiasing click labels -- but the Pragmatist counters that getting position data requires a 2-week logging instrumentation effort, which conflicts with the quarterly timeline."
+**What discriminates 3 from 4:** At score 3, the synthesis says "The Methodology Critic is concerned about position bias while the Pragmatist questions data availability." At score 4, it also includes a blind spot like "None of the three personas asked whether the evaluation labels were collected from the same user population as production traffic — if your judges are search quality experts but your users are general consumers, the labels may not reflect real user satisfaction."
+
+**What discriminates 4 from 5:** At score 4, blind spots name a gap. At score 5, blind spots change the shape of the analysis — they surface an assumption so fundamental that addressing it would alter the entire approach. The user reads it and thinks "oh, I hadn't considered that at all."
 
 ---
 

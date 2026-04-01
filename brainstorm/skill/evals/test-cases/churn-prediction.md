@@ -161,6 +161,31 @@ These are genuine, decision-forcing tensions. The synthesis should stage them as
 
 ---
 
+## Simulated User Response (for eval)
+
+When the brainstorm reaches the Socratic loop and presents the synthesis, respond as:
+
+```
+Good points. I'll start with a logistic regression model using payment and activity
+features. For the intervention, we'll flag at-risk users weekly and have the CS team
+do personalized outreach calls. I think we can get a basic model deployed in 3-4 weeks,
+which leaves enough runway to hit the VP's quarterly target. We'll use AUC to track
+model quality and churn rate reduction as the business metric.
+```
+
+**Why this response is useful for eval:**
+- Leaves the prediction-intervention gap open — CS outreach is a channel, not a
+  designed intervention. What do they say? What offer do they make? How do you
+  know it works?
+- Timeline is optimistic — 3-4 weeks to deploy a model assumes clean data, clear
+  label definition, and existing infrastructure. None verified.
+- AUC as model metric is fine but doesn't address the Methodology Critic's causal
+  concern — high AUC doesn't mean the intervention will reduce churn by 15%
+- Doesn't address label definition (what is "churned"?) or survivorship bias
+- Ignores the Pragmatist's 80/20 suggestion (rules-based segmentation first)
+
+---
+
 ## What This Eval Does NOT Check (Structural -- v1.0)
 
 - Whether the Methodology Critic correctly identifies the prediction-intervention gap
