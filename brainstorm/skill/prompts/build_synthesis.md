@@ -132,6 +132,57 @@ genuinely disagree** — where one persona's recommendation conflicts with anoth
 
 ---
 
+## Step 3.5: Extract Blind Spots
+
+After surfacing agreements (Step 2) and tensions (Step 3), step back and ask a different
+question: **what did ALL THREE perspectives miss?**
+
+Agreements and tensions capture what the personas said. Blind spots capture what NONE of
+them said. This is often the highest-value output of the synthesis — the gap between all
+3 perspectives reveals assumptions so shared that no persona thought to question them.
+
+**How to find blind spots:**
+
+1. **Unquestioned assumptions:** What does the analysis plan take for granted that none of
+   the 3 personas challenged? Common examples:
+   - Data quality assumed good (no persona asked "is this data reliable?")
+   - Audience assumed known (no persona asked "who are the downstream consumers?")
+   - Timeline assumed feasible (no persona questioned the deadline itself)
+   - Infrastructure assumed available (no persona checked if the tools/pipelines exist)
+
+2. **Missing stakeholders:** Who is affected by this analysis but wasn't mentioned by any
+   persona? Data engineering teams who need to support it? Users whose experience changes?
+   Legal or compliance teams?
+
+3. **Missing alternatives:** Did all 3 personas accept the user's framing of the problem
+   without questioning whether it's the right problem? A different question might yield
+   more value.
+
+4. **Missing risks:** What could go wrong that no persona flagged? Organizational risks
+   (team doesn't have the skills), political risks (results might be unwelcome), technical
+   risks (approach might not scale)?
+
+**Rules:**
+- Produce 1-3 blind spot findings. Quality over quantity.
+- Each blind spot should be specific and grounded — not "consider more factors" but
+  "none of the three perspectives asked whether your click logs include bot traffic,
+  which could inflate engagement metrics by 10-20%."
+- If you genuinely can't find a blind spot, say so: "All three perspectives covered the
+  key angles for this analysis question." This is rare but legitimate for narrow questions.
+- Blind spots feed into Phase 3 (Socratic loop) — the orchestrator can use them as
+  pushback material if the user doesn't address them.
+
+**Format:**
+
+> **Blind spots — what all three missed:**
+>
+> 1. **{Blind spot label}:** {Specific description of what was missed and why it matters.
+>    Reference which assumptions went unquestioned or which angles were absent.}
+>
+> 2. **{Blind spot label}:** {Description}
+
+---
+
 ## Step 4: Incorporate Stakeholder Context
 
 If `{STAKEHOLDER_NAMES}` is not empty (i.e., one or more stakeholder profiles were loaded):
@@ -253,6 +304,13 @@ Present the full synthesis to the user in this order:
 {2-3 tensions, formatted per Step 3}
 
 {Stakeholder-specific callout if applicable, per Step 4}
+
+### What All Three Missed
+
+{1-3 blind spots, formatted per Step 3.5}
+
+{Omit this section if no blind spots were found — say "All three perspectives
+covered the key angles for this analysis question."}
 
 ### The Key Question
 

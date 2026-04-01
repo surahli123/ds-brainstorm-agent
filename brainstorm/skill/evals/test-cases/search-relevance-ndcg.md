@@ -150,6 +150,29 @@ Quality evals use the rubric in `evals/quality-rubric.md`. This section defines 
 
 ---
 
+## Simulated User Response (for eval)
+
+When the brainstorm reaches the Socratic loop and presents the synthesis, respond as:
+
+```
+We mainly use binary relevance labels right now, so MRR might actually be a better
+fit since it only needs binary judgments. Position bias shouldn't be a big issue —
+we randomize the top 3 results in our evaluation sets. I think we can just switch
+to MRR and recompute past experiments with the new metric to keep comparisons fair.
+```
+
+**Why this response is useful for eval:**
+- Gives the challenger pushback material on label assumptions (binary labels doesn't
+  mean MRR is automatically better — NDCG with binary labels collapses to a rank-aware
+  precision metric that may still be more informative)
+- The "randomize top 3" claim is questionable — randomization in evaluation sets
+  doesn't eliminate position bias in click logs used for training
+- Underestimates rebaselining effort — "just recompute" ignores that changing the
+  primary metric changes what "improved" means for every past experiment
+- Doesn't address the Stakeholder Advocate's concern about QSR alignment at all
+
+---
+
 ## What This Eval Does NOT Check (Structural — v1.0)
 
 - Whether the Methodology Critic's challenge is actually correct about NDCG vs MRR tradeoffs
