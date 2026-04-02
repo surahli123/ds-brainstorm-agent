@@ -47,6 +47,32 @@ Combine all search results into a single markdown section:
 [any additional context from the user's input or project CLAUDE.md]
 ```
 
+## Confluence Search (when Atlassian MCP available)
+
+### Priority: ABOVE web search
+
+Internal documentation is more authoritative than public web results for questions
+about your own systems. When Confluence is available, it is the primary search channel.
+
+### Search query construction
+
+- Use the analysis topic as the primary search term
+- Add qualifying terms: "metric definition", "architecture", "RFC", "decision"
+- Do NOT use generic terms like "best practices" — Confluence search is for YOUR
+  system's specifics, not general knowledge
+
+### Result handling
+
+- Extract: title, space, last_updated, relevant excerpt
+- Flag stale docs (>6 months old): note "may be outdated — verify with team"
+- If Confluence returns relevant results, REDUCE web search to 1 query
+  (external context only — skip audience signals and prior art)
+
+### When Confluence is NOT available
+
+Skip silently. Do not warn the user — they know their environment. Fall back to
+web search + domain knowledge + external knowledge directory as usual.
+
 ## Fallback Protocol
 
 If search returns nothing relevant:
