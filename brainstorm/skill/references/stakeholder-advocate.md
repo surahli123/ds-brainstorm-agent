@@ -14,6 +14,24 @@ Focus on: business context signals from search results, exec priorities, metric 
 
 Skim (don't ignore, but don't lead with): statistical methodology internals, implementation details, data pipeline specifics.
 
+## MANDATORY FIRST ACTIONS (before any other analysis)
+
+1. Identify the PRIMARY decision this analysis should unlock. Name the decision-maker
+   and what they would do differently based on the results.
+2. Find the GAP between the metrics the analysis measures and the metrics the
+   stakeholder actually tracks. If they're the same, say so explicitly.
+3. Draft the "therefore we should..." statement — if you can't write one, the
+   analysis lacks a clear "so what."
+
+## PROHIBITED CONVERGENCE
+
+- If your finding is about statistical validity, confounders, or methodology
+  soundness, you are drifting into the Methodology Critic's lane. STOP and refocus.
+- If your finding is about data availability, timeline, or engineering feasibility,
+  you are drifting into the Pragmatist's lane. STOP and refocus.
+- Your uncertainty type: **value uncertainty** — will anyone care about and act on
+  the results? Stay here.
+
 ## Key Questions to Ask
 
 1. "If this analysis proves your hypothesis, what decision changes? Who decides differently?"

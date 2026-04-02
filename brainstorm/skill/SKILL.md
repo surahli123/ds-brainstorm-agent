@@ -26,6 +26,7 @@ orchestrator pushes back on your responses until your analysis plan is sharp.
 |-----------|----------|-------------|
 | Analysis question or plan | Yes | What you want to analyze, explore, or investigate |
 | `--domain` | No | Domain knowledge to load (e.g., `search-relevance`, `experimentation`). Enriches all 3 personas with domain-specific vocabulary and concerns. |
+| `--knowledge-dir` | No | Path to external domain knowledge directory (e.g., `~/projects/Search_Metric_Analyzer/domains/search_metrics/knowledge/`). Loads YAML/md summaries into evidence block. |
 | `--stakeholder` | No | Stakeholder name(s) to load profiles for. Supports comma-separated names for multi-stakeholder mode (e.g., `--stakeholder "Jane Doe, Bob Smith"`). Cap: 3 stakeholders max. Loads from `stakeholders/{slug}.md`. Enriches all 3 personas with stakeholder-specific context. Build profiles first with `/build-stakeholder-profile`. |
 | `--rounds` | No | Max Socratic dialogue rounds (default: 3) |
 
@@ -59,6 +60,30 @@ Read file: skills/ds-brainstorm/references/domains/{domain}.md
 
 - **If the file exists:** Store its contents as `domain_knowledge` for inclusion in the evidence block.
 - **If the file does not exist:** Warn the user: *"No domain knowledge file found for '{domain}'. Proceeding without domain enrichment. Available domains are in `skills/ds-brainstorm/references/domains/`."* Set `domain_knowledge` to empty string.
+
+### Step 0.2b: External Knowledge Directory (if --knowledge-dir specified)
+
+If `--knowledge-dir` is provided:
+
+1. **Verify directory exists** using `Glob` on `{knowledge-dir}/*.yaml` and `{knowledge-dir}/*.md`.
+   If no files found, warn: *"No knowledge files found at '{knowledge-dir}'. Proceeding without external knowledge."*
+
+2. **Build knowledge summary.** For each `.yaml` file found:
+   - Read the file
+   - Extract top-level keys and their `description` or `function` fields (first level only)
+   - Do NOT load full file contents — they're too large for context budget
+
+3. **Store as `external_knowledge_summary`** — a markdown summary like:
+   ```
+   **metric_definitions.yaml:** click_quality, search_quality_success, ai_trigger_rate, ...
+   **search_pipeline_knowledge.yaml:** query_understanding, content_classification, ranking, neural_retrieval, ...
+   **architecture_tradeoffs.yaml:** model_tiering, batch_processing, feature_caching, ...
+   ```
+
+4. **On-demand deep reads.** When a persona needs deeper context on a specific component
+   (e.g., "ranking failure modes"), the orchestrator reads the relevant YAML section
+   using `Grep` or `Read` with offset, and injects it into that persona's dispatch prompt
+   as additional context.
 
 ### Step 0.3: Stakeholder Profile Loading
 
@@ -110,6 +135,33 @@ If `--stakeholder` is specified:
    With 3 profiles loaded, total stakeholder context is ~9%. This reduces headroom for the
    Socratic dialogue — consider keeping dialogue to 2 rounds when 3 stakeholders are loaded.
 
+### Step 0.3b: Confluence Search (if Atlassian MCP available)
+
+**Detection:** Check if `mcp__atlassian__search_confluence` tool is available.
+If not available: skip silently. Log internally: "Confluence MCP not available — using web search only."
+
+If available, run 3 targeted Confluence searches BEFORE web search (internal docs are
+authoritative for questions about your own systems):
+
+1. **Metric definitions:**
+   Query: `"{analysis_topic} metric definition OR measurement"`
+   Goal: Find how this metric is actually computed internally
+
+2. **System architecture:**
+   Query: `"{analysis_topic} architecture OR design doc OR RFC"`
+   Goal: Find system design docs for the components being analyzed
+
+3. **Decision history:**
+   Query: `"{analysis_topic} decision OR tradeoff OR retrospective"`
+   Goal: Find what was already considered and rejected
+
+Store results as `confluence_results`. These go ABOVE web search results in the
+evidence block (internal docs take priority).
+
+If Confluence returns results, REDUCE web search to 1 query (external context only —
+skip audience signals and prior art searches, which are less useful when internal
+docs are available).
+
 ### Step 0.4: Search Grounding
 
 Execute **three `WebSearch` calls** to gather real-world evidence. These can run in parallel
@@ -159,6 +211,14 @@ Assemble it in this structure:
 ### Prior Art
 [2-3 most relevant similar analyses from Search 3. Include source URLs.]
 [If Search 3 returned nothing: "No prior art found via search."]
+
+### Confluence Context (internal docs — highest authority)
+[Results from Step 0.3b Confluence search, if available.]
+[If Confluence MCP not available: omit this section entirely.]
+
+### External Domain Knowledge (loaded via --knowledge-dir)
+[Summary from Step 0.2b, if --knowledge-dir specified.]
+[If not specified: omit this section entirely.]
 
 ### Domain Knowledge (loaded via --domain)
 [Contents of domain_knowledge, or "No domain knowledge loaded." if --domain not specified]
@@ -489,6 +549,29 @@ Format the synthesis as a conversational challenge (not a report). Use this stru
 ```
 
 Then wait for the user to respond. Do NOT proceed to Phase 3 automatically.
+
+### Step 2.6: Context Trimming (before Socratic loop)
+
+Before entering Phase 3, trim context to prevent attention degradation:
+
+**Keep:**
+- Each persona's structured JSON output (~3K per persona, ~9K total)
+- The synthesis you just produced (agreements, tensions, key question)
+- Domain knowledge and external knowledge summaries (reference material)
+- The user's original question
+
+**Trim (discard from active reasoning):**
+- Raw search results from Phase 0 (URLs, snippets) — already distilled into evidence block
+- Intermediate search queries and search grounding details
+- Persona reference file contents (already consumed by subagents)
+
+**Why:** By Phase 3, the raw search results (~30K tokens across 3 searches) have been
+distilled into persona findings. Carrying them forward wastes attention budget and
+causes models to skip phases or jump to conclusions (observed with GPT 5.4 high).
+
+**How:** You don't need to literally delete context. Instead, when constructing Phase 3
+responses, reference ONLY the persona JSON outputs and synthesis — not the raw evidence
+block. If you need to re-check a specific evidence point, re-read it on demand.
 
 ---
 
