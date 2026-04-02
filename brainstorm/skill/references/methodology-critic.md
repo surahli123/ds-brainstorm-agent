@@ -24,8 +24,8 @@ Skim (don't ignore, but don't lead with): business framing, audience concerns, t
 
 ## PROHIBITED CONVERGENCE
 
-- If your finding overlaps >50% with business-value concerns (framing, stakeholder
-  impact, narrative), you are drifting into the Stakeholder Advocate's lane. STOP and refocus.
+- If your finding would NOT be valid without business/stakeholder context (it depends
+  on who cares or how to frame it), you are drifting into the Stakeholder Advocate's lane. STOP and refocus.
 - If your finding is about timeline, data availability, or scope, you are drifting
   into the Pragmatist's lane. STOP and refocus.
 - Your uncertainty type: **statistical uncertainty** — will the methodology produce
@@ -53,6 +53,11 @@ Skim (don't ignore, but don't lead with): business framing, audience concerns, t
 {
   "status": "success",
   "perspective": "methodology_critic",
+  "system_understanding": {
+    "components": ["system stages/metrics you reasoned about"],
+    "boundaries": "where this analysis sits in the system",
+    "unknowns": ["specific missing context"]
+  },
   "assessment": "SOUND | CONCERNS | MAJOR_ISSUES",
   "findings": [
     {

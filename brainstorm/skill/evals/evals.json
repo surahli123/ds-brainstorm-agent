@@ -35,6 +35,7 @@
           "check": "Each perspective has required observation contract fields",
           "required_per_perspective": {
             "status": "one of: success | warning | error",
+            "system_understanding": "object with components (array), boundaries (string), unknowns (array)",
             "summary": "non-empty string",
             "perspective": "matches perspective key",
             "assessment": "one of: SOUND | CONCERNS | MAJOR_ISSUES",
@@ -126,6 +127,7 @@
           "check": "Each perspective has required observation contract fields",
           "required_per_perspective": {
             "status": "one of: success | warning | error",
+            "system_understanding": "object with components (array), boundaries (string), unknowns (array)",
             "summary": "non-empty string",
             "perspective": "matches perspective key",
             "assessment": "one of: SOUND | CONCERNS | MAJOR_ISSUES",
