@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.6.0] - 2026-04-02 — Hybrid Reproducibility, Persona Grounding, Knowledge Integration
+
+### Added
+- Persona grounding step (Step 2.5): personas must state system understanding before challenging (PR #12)
+- Mandatory divergence anchors + prohibited convergence rules per persona with binary litmus tests (PR #12)
+- `--knowledge-dir` flag for external domain knowledge loading (e.g., Search Metric Analyzer YAML files) (PR #12)
+- Confluence MCP search placeholder — detection, CQL queries, graceful skip (PR #12)
+- Context trimming (Step 2.6) between Phase 2 synthesis and Phase 3 Socratic loop (PR #12)
+- `system_understanding` field in all persona output schemas and eval structural checks (PR #12)
+- 39 new brainstorm skill structural tests (`tests/test_brainstorm_skill.py`) (PR #12)
+- Inline dispatch prompts synced with grounding/divergence instructions (PR #12)
+
+### Changed
+- CLAUDE.md validated results updated: hybrid `--runs 3` stdev 0.16 (2.25x tighter than numeric), numeric +1.67 improvement was mostly regression-to-mean (PR #10)
+- Evidence block reordered: Confluence > External Knowledge > Domain > Web Search (PR #12)
+- Convergence rules use binary litmus tests instead of vague ">50% overlap" thresholds (PR #12)
+- `--runs 3` documented as mandatory for all scored comparisons (PR #10)
+
+### Validated
+- Hybrid reproducibility: stdev 0.16 with `--runs 3` (5 calibration runs × 3 eval-runs)
+- Hybrid loop: baseline 7.21, plateau at content ceiling (correctly identifies no improvement possible)
+- Numeric benchmark reanalysis: true improvement ~+0.25, not +1.67 (regression-to-mean from single-shot outlier)
+- 107 tests passing (39 brainstorm skill + 68 autoresearch)
+
+### Removed
+- Stale branch `feature/ds-autoresearch-v2-feedback-forward` (already merged, behind main)
+
 ## [1.5.0] - 2026-03-30 — Repo Restructure, RovoDev Skill, DRY Fix
 
 ### Changed
