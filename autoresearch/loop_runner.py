@@ -241,6 +241,7 @@ def _average_results(
     analysis_text: str,
     config: dict,
     num_runs: int,
+    judge_config: "evaluate.JudgeConfig | None" = None,
 ) -> dict:
     """Run N-1 additional evaluations and average with first_result.
 
@@ -256,7 +257,7 @@ def _average_results(
     additional_results = [first_result]
     for i in range(num_runs - 1):
         extra_sub, extra_comm, _, _ = evaluate.call_judges_parallel(
-            analysis_text, config
+            analysis_text, config, judge_config=judge_config
         )
         if extra_sub is not None and extra_comm is not None:
             additional_results.append(
@@ -665,6 +666,84 @@ def _validate_dependencies(provider: str, judge_provider: str = "codex"):
 
 
 # ─────────────────────────────────────────────
+# Atomic Writes & Checkpointing
+# ─────────────────────────────────────────────
+
+def _atomic_write(path: Path | str, content: str):
+    """Write content to path atomically via tmp + os.replace().
+
+    Prevents partial writes on crash — either the old file or the
+    new file exists, never a half-written file.
+    """
+    path = Path(path)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(content)
+    os.replace(str(tmp_path), str(path))
+
+
+def _save_checkpoint(run_dir: Path, checkpoint: dict):
+    """Atomically save checkpoint.json for crash recovery."""
+    _atomic_write(run_dir / "checkpoint.json", json.dumps(checkpoint, indent=2))
+
+
+def _load_checkpoint(run_dir: Path) -> dict | None:
+    """Load checkpoint from run_dir, return None if missing."""
+    cp_path = run_dir / "checkpoint.json"
+    if not cp_path.exists():
+        return None
+    try:
+        return json.loads(cp_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _validate_checkpoint(checkpoint: dict) -> bool:
+    """Validate checkpoint has required keys and workdir exists."""
+    required = {"cycle", "workdir", "current_best", "history", "run_dir"}
+    if not required.issubset(checkpoint.keys()):
+        return False
+    if not Path(checkpoint["workdir"]).exists():
+        return False
+    return True
+
+
+def _build_checkpoint(
+    cycle: int, workdir: str, current_best: dict, history: list,
+    run_dir: str, baseline: dict, input_path: str,
+    judge_config_dict: dict, args_dict: dict,
+) -> dict:
+    """Build a checkpoint dict with all loop state needed for resume."""
+    return {
+        "cycle": cycle,
+        "workdir": workdir,
+        "current_best": current_best,
+        "history": history,
+        "run_dir": run_dir,
+        "baseline": baseline,
+        "input_path": input_path,
+        "judge_config": judge_config_dict,
+        "args": args_dict,
+        "timestamp": datetime.datetime.now().isoformat(),
+    }
+
+
+def _next_backup_path(input_path: Path) -> Path:
+    """Return the next versioned backup path (.md.bak, .md.bak.001, ...).
+
+    Prevents clobbering previous backups when re-running on the same file.
+    """
+    base = input_path.with_suffix(".md.bak")
+    if not base.exists():
+        return base
+    for i in range(1, 1000):
+        versioned = input_path.with_suffix(f".md.bak.{i:03d}")
+        if not versioned.exists():
+            return versioned
+    # Fallback: overwrite the base backup
+    return base
+
+
+# ─────────────────────────────────────────────
 # Logging
 # ─────────────────────────────────────────────
 
@@ -679,28 +758,29 @@ def _ensure_run_dir(project_root: Path) -> Path:
 
 
 def _log_scores(run_dir: Path, entry: dict):
-    """Append a score entry to scores.jsonl."""
+    """Append a score entry to scores.jsonl with fsync for durability."""
     with open(run_dir / "scores.jsonl", "a") as f:
         f.write(json.dumps(entry) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def _save_critique(run_dir: Path, cycle: int, judge_name: str, critique: str | None):
     """Save judge critique text to critiques/ directory (CEO review #16)."""
     if critique:
         path = run_dir / "critiques" / f"cycle-{cycle:03d}-{judge_name}.txt"
-        path.write_text(critique)
+        _atomic_write(path, critique)
 
 
 def _save_diff(run_dir: Path, cycle: int, diff_text: str):
     """Save the diff for this cycle."""
     path = run_dir / "diffs" / f"cycle-{cycle:03d}.diff"
-    path.write_text(diff_text)
+    _atomic_write(path, diff_text)
 
 
 def _write_summary(run_dir: Path, summary: dict):
-    """Write final summary.json."""
-    with open(run_dir / "summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+    """Write final summary.json atomically."""
+    _atomic_write(run_dir / "summary.json", json.dumps(summary, indent=2))
 
 
 def resolve_config_path(config_path: str, project_root: Path) -> Path:
@@ -737,6 +817,258 @@ def _human_gate_prompt(cycle: int, improvement: float, new_composite: float) -> 
 
 
 # ─────────────────────────────────────────────
+# Resume from Checkpoint
+# ─────────────────────────────────────────────
+
+def _run_loop_resume(args, project_root: Path, resume_dir: Path):
+    """Resume a crashed run from checkpoint.json.
+
+    Restores all state (workdir, history, scores, judge config) and
+    continues the cycle loop from where it left off. Uses the same
+    decision logic as the main loop.
+    """
+    checkpoint = _load_checkpoint(resume_dir)
+    if checkpoint is None:
+        print(f"ERROR: No checkpoint.json found in {resume_dir}")
+        sys.exit(1)
+
+    if not _validate_checkpoint(checkpoint):
+        print(f"ERROR: Invalid checkpoint — workdir missing or required keys absent")
+        sys.exit(1)
+
+    print(f"Resuming from checkpoint (cycle {checkpoint['cycle']})...")
+    print(f"  Run dir: {resume_dir}")
+    print(f"  Workdir: {checkpoint['workdir']}")
+
+    # Restore state
+    workdir = checkpoint["workdir"]
+    run_dir = Path(checkpoint["run_dir"])
+    current_best = checkpoint["current_best"]
+    history = checkpoint["history"]
+    baseline = checkpoint["baseline"]
+    input_path = Path(checkpoint["input_path"])
+    analysis_dest = Path(workdir) / "analysis.md"
+
+    # Restore judge config
+    jc_dict = checkpoint.get("judge_config", {})
+    judge_config = evaluate.JudgeConfig.from_dict(jc_dict) if jc_dict else evaluate.JudgeConfig()
+
+    # Restore args from checkpoint
+    cp_args = checkpoint.get("args", {})
+    total_cycles = cp_args.get("cycles", args.cycles)
+    num_runs = cp_args.get("runs", getattr(args, 'runs', 1))
+    auto_approve = cp_args.get("auto_approve", getattr(args, 'auto_approve', False))
+    max_total_cycles = cp_args.get("max_total_cycles", getattr(args, 'max_total_cycles', 20))
+    keep_workdir = cp_args.get("keep_workdir", getattr(args, 'keep_workdir', False))
+
+    # Read writer prompt
+    system_prompt = _read_program_prompt(project_root)
+    config = evaluate.load_config(str(resolve_config_path(
+        getattr(args, 'config', 'review_config.yaml'), project_root
+    )))
+
+    # Select writer function
+    provider = cp_args.get("provider", getattr(args, 'provider', 'claude-code'))
+    if provider == "claude-code":
+        writer_fn = call_writer_claude_code
+    elif provider == "novita":
+        from functools import partial
+        model = getattr(args, 'model', None) or "deepseek/deepseek-v3.2"
+        writer_fn = partial(call_writer_novita, model=model)
+    else:
+        from functools import partial
+        model = getattr(args, 'model', None) or "claude-sonnet-4-20250514"
+        writer_fn = partial(call_writer_anthropic, model=model)
+
+    start_cycle = checkpoint["cycle"] + 1
+    consecutive_writer_failures = 0
+
+    for cycle in range(start_cycle, total_cycles + 1):
+        if budget_exceeded(cycle, max_total_cycles):
+            print(f"\n  HALT: Budget exceeded (max_total_cycles={max_total_cycles})")
+            break
+
+        if should_halt(history, config):
+            print("\n  PLATEAU DETECTED — 3 consecutive non-improving cycles")
+            break
+
+        if should_halt_judge_failures(history):
+            print("\n  HALT: 3 consecutive judge failures (systemic issue)")
+            break
+
+        if current_best["composite"] >= config.get("thresholds", {}).get("target_score", 9.0):
+            print(f"\n  HALT: Target score reached ({current_best['composite']})")
+            break
+
+        phase = get_phase(cycle, total_cycles)
+        print(f"\n{'='*50}")
+        print(f"CYCLE {cycle}/{total_cycles} — Phase: {phase} (RESUMED)")
+        print(f"{'='*50}")
+
+        # ── 1. Write ──
+        analysis_text = analysis_dest.read_text()
+        cycle_summary = _build_cycle_summary(history)
+
+        judge_feedback = None
+        if history:
+            last = history[-1]
+            sub_crit = last.get("sub_critique", "")
+            comm_crit = last.get("comm_critique", "")
+            if sub_crit or comm_crit:
+                parts = []
+                if sub_crit:
+                    parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
+                if comm_crit:
+                    parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+                judge_feedback = "\n\n".join(parts)
+
+        improved_text = writer_fn(
+            analysis_text=analysis_text,
+            system_prompt=system_prompt,
+            cycle=cycle,
+            total_cycles=total_cycles,
+            phase=phase,
+            cycle_summary=cycle_summary,
+            judge_feedback=judge_feedback,
+        )
+
+        if improved_text is None:
+            print("  [WARN] Writer returned nothing — skipping cycle")
+            consecutive_writer_failures += 1
+            if consecutive_writer_failures >= 3:
+                print("  HALT: 3 consecutive writer failures")
+                history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_failure"})
+                break
+            history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_failure"})
+            continue
+
+        if not validate_writer_output(improved_text, analysis_text):
+            print("  [WARN] Writer output failed validation — skipping cycle")
+            history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_validation_failed"})
+            continue
+
+        consecutive_writer_failures = 0
+
+        # ── 2. Commit ──
+        analysis_dest.write_text(improved_text)
+        _git_commit(workdir, f"cycle {cycle}: {phase} improvement (resumed)")
+
+        diff_text = _git_diff(workdir)
+        _save_diff(run_dir, cycle, diff_text)
+
+        # ── 3. Evaluate ──
+        print(f"  Evaluating ({num_runs} run{'s' if num_runs > 1 else ''})...")
+        sub_scores, comm_scores, sub_critique, comm_critique = evaluate.call_judges_parallel(
+            improved_text, config, judge_config=judge_config
+        )
+        _save_critique(run_dir, cycle, "substance", sub_critique)
+        _save_critique(run_dir, cycle, "communication", comm_critique)
+
+        if sub_scores is None or comm_scores is None:
+            print("  [WARN] Judge failure — skipping cycle")
+            _git_revert_file(workdir)
+            history.append({"cycle": cycle, "action": "skip", "judge_failure": True})
+            continue
+
+        first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
+        new_result = _average_results(first_result, improved_text, config, num_runs, judge_config=judge_config)
+        action = decide_action(current_best, new_result, config)
+        improvement = new_result["composite"] - current_best["composite"]
+
+        print(f"  Composite: {current_best['composite']} → {new_result['composite']} ({improvement:+.2f})")
+
+        if action == "human_gate":
+            if auto_approve:
+                print("  [AUTO-APPROVE] Marginal improvement auto-kept")
+                action = "keep"
+            elif _human_gate_prompt(cycle, improvement, new_result["composite"]):
+                action = "keep"
+            else:
+                action = "revert"
+
+        if action == "keep":
+            print(f"  ✓ KEEP (improvement: {improvement:+.2f})")
+            current_best = new_result
+        elif action == "revert":
+            print(f"  ✗ REVERT (improvement: {improvement:+.2f})")
+            _git_revert_file(workdir)
+
+        history.append({
+            "cycle": cycle, "action": action, "judge_failure": False,
+            "composite": new_result["composite"],
+            "improvement": round(improvement, 4),
+            "phase": phase, "hypothesis": f"{phase} improvement",
+            "sub_critique": sub_critique or "", "comm_critique": comm_critique or "",
+        })
+        _log_scores(run_dir, {"cycle": cycle, "action": action, "timestamp": datetime.datetime.now().isoformat(), **new_result})
+
+        _save_checkpoint(run_dir, _build_checkpoint(
+            cycle=cycle, workdir=workdir,
+            current_best=current_best, history=history,
+            run_dir=str(run_dir), baseline=baseline,
+            input_path=str(input_path),
+            judge_config_dict=judge_config.to_dict(),
+            args_dict={"cycles": total_cycles, "provider": provider, "runs": num_runs,
+                        "auto_approve": auto_approve, "max_total_cycles": max_total_cycles,
+                        "keep_workdir": keep_workdir},
+        ))
+
+    # ── Finalize (same as main loop) ──
+    print(f"\n{'='*50}")
+    print("LOOP COMPLETE (resumed)")
+    print(f"{'='*50}")
+
+    final_text = analysis_dest.read_text()
+    shutil.copy2(analysis_dest, run_dir / "analysis-final.md")
+
+    if current_best["composite"] > baseline["composite"]:
+        input_path.write_text(final_text)
+        print(f"Final analysis written to: {input_path}")
+    else:
+        print(f"No improvement over baseline — original file unchanged.")
+
+    kept = sum(1 for h in history if h.get("action") == "keep")
+    reverted = sum(1 for h in history if h.get("action") == "revert")
+    skipped = sum(1 for h in history if h.get("action") == "skip")
+    total = len(history)
+
+    status = "completed"
+    if should_halt_judge_failures(history):
+        status = "judge_failure"
+    elif should_halt(history, config):
+        status = "plateau"
+    elif budget_exceeded(total, max_total_cycles):
+        status = "budget_exceeded"
+    elif current_best["composite"] >= config.get("thresholds", {}).get("target_score", 9.0):
+        status = "target_reached"
+
+    summary = {
+        "status": status, "cycles": total, "kept": kept,
+        "reverted": reverted, "skipped": skipped,
+        "baseline_score": baseline["composite"],
+        "final_score": current_best["composite"],
+        "improvement": round(current_best["composite"] - baseline["composite"], 4),
+        "input_file": str(input_path), "run_dir": str(run_dir),
+        "timestamp": datetime.datetime.now().isoformat(),
+        "resumed": True,
+    }
+    _write_summary(run_dir, summary)
+
+    # Clean completion — remove checkpoint
+    cp_path = run_dir / "checkpoint.json"
+    if cp_path.exists():
+        cp_path.unlink()
+
+    print(f"\nBaseline: {baseline['composite']} → Final: {current_best['composite']}")
+    print(f"Cycles: {total} (kept={kept}, reverted={reverted}, skipped={skipped})")
+    print(f"Status: {status}")
+
+    if not keep_workdir:
+        shutil.rmtree(workdir, ignore_errors=True)
+        print(f"Cleaned up workdir: {workdir}")
+
+
+# ─────────────────────────────────────────────
 # Main Loop
 # ─────────────────────────────────────────────
 
@@ -749,6 +1081,12 @@ def run_loop(args):
     4. Stop on: 3 non-improving, budget exceeded, or target reached
     5. Copy final result back
     """
+    # ── Resume from checkpoint if --resume provided ──
+    if getattr(args, 'resume', None):
+        resume_dir = Path(args.resume).resolve()
+        project_root = Path(__file__).parent.resolve()
+        return _run_loop_resume(args, project_root, resume_dir)
+
     project_root = Path(__file__).parent.resolve()
 
     # Validate dependencies
@@ -768,7 +1106,7 @@ def run_loop(args):
         sys.exit(1)
 
     # Backup original before we touch anything (security: recovery path)
-    backup_path = input_path.with_suffix(".md.bak")
+    backup_path = _next_backup_path(input_path)
     shutil.copy2(input_path, backup_path)
     print(f"Backup saved: {backup_path}")
 
@@ -790,8 +1128,9 @@ def run_loop(args):
     judge_provider = getattr(args, 'judge_provider', 'codex')
     judge_model = getattr(args, 'judge_model', 'deepseek/deepseek-v3.2')
     judge_format = getattr(args, 'judge_format', 'hybrid')
-    evaluate.set_judge_provider(judge_provider, judge_model)
-    evaluate.set_judge_format(judge_format)
+    judge_config = evaluate.JudgeConfig(
+        provider=judge_provider, model=judge_model, format=judge_format
+    )
     if judge_provider != "codex" or judge_format != "numeric":
         print(f"  Judge: {judge_provider} ({judge_model}), format: {judge_format}")
 
@@ -802,7 +1141,7 @@ def run_loop(args):
 
     # First run: get critiques for feedback-forward
     sub_scores, comm_scores, sub_critique, comm_critique = evaluate.call_judges_parallel(
-        analysis_text, config
+        analysis_text, config, judge_config=judge_config
     )
 
     if sub_scores is None or comm_scores is None:
@@ -812,7 +1151,7 @@ def run_loop(args):
 
     # Multi-run averaging: reuse first run, add N-1 more, average all.
     first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
-    baseline = _average_results(first_result, analysis_text, config, num_runs)
+    baseline = _average_results(first_result, analysis_text, config, num_runs, judge_config=judge_config)
     if "score_stdev" in baseline:
         print(f"Baseline composite: {baseline['composite']} (averaged over {baseline['num_runs']} runs, stdev={baseline['score_stdev']:.3f})")
     else:
@@ -969,7 +1308,7 @@ def run_loop(args):
 
         # First run: get critiques for feedback-forward
         sub_scores, comm_scores, sub_critique, comm_critique = evaluate.call_judges_parallel(
-            improved_text, config
+            improved_text, config, judge_config=judge_config
         )
 
         # Save critiques (CEO review #16)
@@ -992,7 +1331,7 @@ def run_loop(args):
 
         # Multi-run averaging: reuse first run, add N-1 more, average all.
         first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
-        new_result = _average_results(first_result, improved_text, config, num_runs)
+        new_result = _average_results(first_result, improved_text, config, num_runs, judge_config=judge_config)
         if "score_stdev" in new_result:
             print(f"  Score stdev: {new_result['score_stdev']:.3f} (over {new_result['num_runs']} runs)")
         action = decide_action(current_best, new_result, config)
@@ -1036,6 +1375,21 @@ def run_loop(args):
             "timestamp": datetime.datetime.now().isoformat(),
             **new_result,
         })
+
+        # ── 7. Checkpoint ──
+        _save_checkpoint(run_dir, _build_checkpoint(
+            cycle=cycle, workdir=workdir,
+            current_best=current_best, history=history,
+            run_dir=str(run_dir), baseline=baseline,
+            input_path=str(input_path),
+            judge_config_dict=judge_config.to_dict(),
+            args_dict={
+                "cycles": args.cycles, "provider": args.provider,
+                "runs": num_runs, "auto_approve": args.auto_approve,
+                "max_total_cycles": args.max_total_cycles,
+                "keep_workdir": args.keep_workdir,
+            },
+        ))
 
     # ── Finalize ──
     print(f"\n{'='*50}")
@@ -1092,6 +1446,11 @@ def run_loop(args):
     print(f"Cycles: {total} (kept={kept}, reverted={reverted}, skipped={skipped})")
     print(f"Status: {status}")
     print(f"Run directory: {run_dir}")
+
+    # Clean completion — remove checkpoint (no resume needed)
+    cp_path = run_dir / "checkpoint.json"
+    if cp_path.exists():
+        cp_path.unlink()
 
     # Cleanup workdir unless --keep-workdir
     if not args.keep_workdir:
@@ -1159,6 +1518,10 @@ def main():
     parser.add_argument(
         "--model", default=None,
         help="Writer model (default: deepseek/deepseek-v3.2 for novita, claude-sonnet-4-20250514 for anthropic)"
+    )
+    parser.add_argument(
+        "--resume", default=None, metavar="RUN_DIR",
+        help="Resume from a crashed run (path to runs/<timestamp>/ dir with checkpoint.json)"
     )
 
     args = parser.parse_args()

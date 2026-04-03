@@ -24,6 +24,7 @@ import datetime
 import subprocess
 import statistics
 import tempfile
+from dataclasses import dataclass, asdict
 from pathlib import Path
 
 
@@ -313,77 +314,69 @@ def call_novita_judge(
     return None, None
 
 
-# Global judge settings — set by main() or loop_runner
-_judge_provider = "codex"
-_judge_model = "deepseek/deepseek-v3.2"
-_judge_format = "numeric"  # "numeric", "binary", or "hybrid"
+# ─────────────────────────────────────────────
+# JudgeConfig — replaces module-level globals
+# ─────────────────────────────────────────────
+
+@dataclass
+class JudgeConfig:
+    """Configuration for judge provider, model, and scoring format."""
+    provider: str = "codex"
+    model: str = "deepseek/deepseek-v3.2"
+    format: str = "numeric"
+
+    def get_template_name(self, base: str) -> str:
+        if self.format == "binary":
+            return f"{base}-judge-binary.md"
+        elif self.format == "hybrid":
+            return f"{base}-judge-hybrid.md"
+        return f"{base}-judge.md"
+
+    def call_judge(self, template_name: str, analysis_text: str) -> tuple[dict | None, str | None]:
+        if self.provider == "novita":
+            return call_novita_judge(template_name, analysis_text, model=self.model)
+        return call_codex_judge(template_name, analysis_text)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "JudgeConfig":
+        return cls(provider=d["provider"], model=d["model"], format=d["format"])
+
+
+_default_config = JudgeConfig()
 
 
 def set_judge_provider(provider: str, model: str = "deepseek/deepseek-v3.2"):
-    """Set the judge provider globally. Called by loop_runner before evaluation."""
-    global _judge_provider, _judge_model
-    _judge_provider = provider
-    _judge_model = model
+    """DEPRECATED: Use JudgeConfig directly."""
+    global _default_config
+    _default_config = JudgeConfig(provider=provider, model=model, format=_default_config.format)
 
 
 def set_judge_format(fmt: str):
-    """Set judge format: 'numeric', 'binary', or 'hybrid'."""
-    global _judge_format
+    """DEPRECATED: Use JudgeConfig directly."""
+    global _default_config
     if fmt not in ("numeric", "binary", "hybrid"):
         raise ValueError(f"Unknown judge format: {fmt}. Use numeric, binary, or hybrid.")
-    _judge_format = fmt
-
-
-def _get_template_name(base: str) -> str:
-    """Map base judge name to the correct template file for current format.
-
-    base is 'substance' or 'communication'.
-    Returns the filename in references/ to use.
-    """
-    if _judge_format == "binary":
-        return f"{base}-judge-binary.md"
-    elif _judge_format == "hybrid":
-        return f"{base}-judge-hybrid.md"
-    else:
-        return f"{base}-judge.md"
-
-
-def _call_judge(template_name: str, analysis_text: str) -> tuple[dict | None, str | None]:
-    """Route to the active judge provider."""
-    if _judge_provider == "novita":
-        return call_novita_judge(template_name, analysis_text, model=_judge_model)
-    else:
-        return call_codex_judge(template_name, analysis_text)
+    _default_config = JudgeConfig(provider=_default_config.provider, model=_default_config.model, format=fmt)
 
 
 def call_judges_parallel(
-    analysis_text: str, config: dict
+    analysis_text: str,
+    config: dict,
+    judge_config: JudgeConfig | None = None,
 ) -> tuple[dict | None, dict | None, str | None, str | None]:
-    """Run both judges in parallel via ThreadPoolExecutor.
-
-    Routes to the correct template based on _judge_format (numeric/binary/hybrid).
-    Returns (substance_scores, communication_scores,
-             substance_critique, communication_critique).
-    Any of these can be None if the corresponding judge failed.
-    """
+    """Run both judges in parallel via ThreadPoolExecutor."""
     from concurrent.futures import ThreadPoolExecutor
 
-    sub_template = _get_template_name("substance")
-    comm_template = _get_template_name("communication")
-
-    if _judge_provider == "novita":
-        sub_scores, sub_critique = _call_judge(sub_template, analysis_text)
-        comm_scores, comm_critique = _call_judge(comm_template, analysis_text)
-        return sub_scores, comm_scores, sub_critique, comm_critique
+    jc = judge_config or _default_config
+    sub_template = jc.get_template_name("substance")
+    comm_template = jc.get_template_name("communication")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        sub_future = executor.submit(
-            _call_judge, sub_template, analysis_text
-        )
-        comm_future = executor.submit(
-            _call_judge, comm_template, analysis_text
-        )
-
+        sub_future = executor.submit(jc.call_judge, sub_template, analysis_text)
+        comm_future = executor.submit(jc.call_judge, comm_template, analysis_text)
         sub_scores, sub_critique = sub_future.result()
         comm_scores, comm_critique = comm_future.result()
 
@@ -444,7 +437,8 @@ def compute_composite(
 def evaluate_with_averaging(
     analysis_text: str,
     config: dict,
-    num_runs: int = 1
+    num_runs: int = 1,
+    judge_config: JudgeConfig | None = None,
 ) -> dict:
     """
     Runs evaluation num_runs times and averages to reduce scoring noise.
@@ -453,13 +447,14 @@ def evaluate_with_averaging(
     time and 8.1 the next, the loop makes unreliable keep/revert decisions.
     Averaging over 3 runs significantly reduces this variance.
     """
+    jc = judge_config or _default_config
     all_results = []
 
     for i in range(num_runs):
-        sub_template = _get_template_name("substance")
-        comm_template = _get_template_name("communication")
-        sub_scores, _ = _call_judge(sub_template, analysis_text)
-        comm_scores, _ = _call_judge(comm_template, analysis_text)
+        sub_template = jc.get_template_name("substance")
+        comm_template = jc.get_template_name("communication")
+        sub_scores, _ = jc.call_judge(sub_template, analysis_text)
+        comm_scores, _ = jc.call_judge(comm_template, analysis_text)
         # Skip this run if either judge failed (returned None)
         if sub_scores is None or comm_scores is None:
             print(f"  [WARN] Judge failure on run {i + 1}/{num_runs} — skipping")
