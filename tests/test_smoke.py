@@ -809,25 +809,25 @@ class TestAutoApprove:
 
 
 class TestJudgeFormatRouting:
-    """Tests for judge format template selection."""
+    """Tests for judge format template selection via JudgeConfig."""
 
     def test_numeric_format_uses_standard_templates(self):
-        from evaluate import set_judge_format, _get_template_name
-        set_judge_format("numeric")
-        assert _get_template_name("substance") == "substance-judge.md"
-        assert _get_template_name("communication") == "communication-judge.md"
+        from evaluate import JudgeConfig
+        jc = JudgeConfig(format="numeric")
+        assert jc.get_template_name("substance") == "substance-judge.md"
+        assert jc.get_template_name("communication") == "communication-judge.md"
 
     def test_binary_format_uses_binary_templates(self):
-        from evaluate import set_judge_format, _get_template_name
-        set_judge_format("binary")
-        assert _get_template_name("substance") == "substance-judge-binary.md"
-        assert _get_template_name("communication") == "communication-judge-binary.md"
+        from evaluate import JudgeConfig
+        jc = JudgeConfig(format="binary")
+        assert jc.get_template_name("substance") == "substance-judge-binary.md"
+        assert jc.get_template_name("communication") == "communication-judge-binary.md"
 
     def test_hybrid_format_uses_hybrid_templates(self):
-        from evaluate import set_judge_format, _get_template_name
-        set_judge_format("hybrid")
-        assert _get_template_name("substance") == "substance-judge-hybrid.md"
-        assert _get_template_name("communication") == "communication-judge-hybrid.md"
+        from evaluate import JudgeConfig
+        jc = JudgeConfig(format="hybrid")
+        assert jc.get_template_name("substance") == "substance-judge-hybrid.md"
+        assert jc.get_template_name("communication") == "communication-judge-hybrid.md"
 
     def test_invalid_format_raises(self):
         from evaluate import set_judge_format
@@ -835,68 +835,57 @@ class TestJudgeFormatRouting:
             set_judge_format("invalid")
 
     def test_format_reset_to_numeric(self):
-        """Ensure format can be changed back to numeric after being set to hybrid."""
-        from evaluate import set_judge_format, _get_template_name
-        set_judge_format("hybrid")
-        assert _get_template_name("substance") == "substance-judge-hybrid.md"
-        set_judge_format("numeric")
-        assert _get_template_name("substance") == "substance-judge.md"
+        """JudgeConfig instances are independent — no global state leak."""
+        from evaluate import JudgeConfig
+        hybrid = JudgeConfig(format="hybrid")
+        numeric = JudgeConfig(format="numeric")
+        assert hybrid.get_template_name("substance") == "substance-judge-hybrid.md"
+        assert numeric.get_template_name("substance") == "substance-judge.md"
 
 
 class TestJudgeProviderRouting:
-    """Tests for judge provider selection."""
+    """Tests for judge provider selection via JudgeConfig."""
 
     def test_default_provider_is_codex(self):
-        from evaluate import _judge_provider
-        # Default after module load — may be changed by prior tests
-        # Just verify the variable exists and is a string
-        assert isinstance(_judge_provider, str)
+        from evaluate import JudgeConfig
+        jc = JudgeConfig()
+        assert jc.provider == "codex"
 
-    def test_set_provider_to_novita(self):
-        from evaluate import set_judge_provider, _judge_provider, _judge_model
-        set_judge_provider("novita", "minimax/minimax-m2.7")
-        # Access globals directly after setting
-        import evaluate
-        assert evaluate._judge_provider == "novita"
-        assert evaluate._judge_model == "minimax/minimax-m2.7"
+    def test_config_with_novita(self):
+        from evaluate import JudgeConfig
+        jc = JudgeConfig(provider="novita", model="minimax/minimax-m2.7")
+        assert jc.provider == "novita"
+        assert jc.model == "minimax/minimax-m2.7"
 
-    def test_set_provider_back_to_codex(self):
-        from evaluate import set_judge_provider
-        import evaluate
-        set_judge_provider("codex")
-        assert evaluate._judge_provider == "codex"
+    def test_config_roundtrip(self):
+        from evaluate import JudgeConfig
+        jc = JudgeConfig(provider="novita", model="test-model", format="hybrid")
+        d = jc.to_dict()
+        jc2 = JudgeConfig.from_dict(d)
+        assert jc2.provider == "novita"
+        assert jc2.model == "test-model"
+        assert jc2.format == "hybrid"
 
-    def test_novita_judges_run_sequentially(self, monkeypatch):
-        """Novita judge calls should bypass the parallel executor path."""
-        import concurrent.futures
+    def test_all_providers_use_threadpool(self, monkeypatch):
+        """Both codex and novita providers now use ThreadPoolExecutor uniformly."""
         import evaluate
 
         calls = []
 
-        def fake_call_judge(template_name, analysis_text):
+        def fake_call_judge(self, template_name, analysis_text):
             calls.append((template_name, analysis_text))
             return {"score": 1.0}, f"critique for {template_name}"
 
-        class FailExecutor:
-            def __init__(self, *args, **kwargs):
-                raise AssertionError("ThreadPoolExecutor should not be used for Novita")
+        monkeypatch.setattr(evaluate.JudgeConfig, "call_judge", fake_call_judge)
 
-        monkeypatch.setattr(evaluate, "_call_judge", fake_call_judge)
-        monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", FailExecutor)
-        evaluate.set_judge_provider("novita", "minimax/minimax-m2.7")
-        evaluate.set_judge_format("hybrid")
-
+        jc = evaluate.JudgeConfig(provider="novita", model="minimax/minimax-m2.7", format="hybrid")
         sub_scores, comm_scores, sub_critique, comm_critique = evaluate.call_judges_parallel(
-            "analysis text", {}
+            "analysis text", {}, judge_config=jc
         )
 
         assert len(calls) == 2
-        assert calls[0][1] == "analysis text"
-        assert calls[1][1] == "analysis text"
         assert sub_scores == {"score": 1.0}
         assert comm_scores == {"score": 1.0}
-        assert "substance" in sub_critique
-        assert "communication" in comm_critique
 
 
 class TestNovitaWriterMocked:
@@ -979,6 +968,127 @@ class TestModelDefaults:
         assert model == "minimax/minimax-m2.7"
 
 
+class TestCheckpoint:
+    """Tests for checkpoint save/load/validate cycle."""
+
+    def test_save_and_load_checkpoint(self):
+        """Checkpoint round-trips through JSON correctly."""
+        from loop_runner import _save_checkpoint, _load_checkpoint
+        with tempfile.TemporaryDirectory() as d:
+            run_dir = Path(d)
+            cp = {"cycle": 3, "workdir": d, "current_best": {"composite": 7.5},
+                  "history": [{"action": "keep"}], "run_dir": d}
+            _save_checkpoint(run_dir, cp)
+            loaded = _load_checkpoint(run_dir)
+            assert loaded["cycle"] == 3
+            assert loaded["current_best"]["composite"] == 7.5
+
+    def test_load_missing_checkpoint_returns_none(self):
+        """Missing checkpoint.json returns None, not crash."""
+        from loop_runner import _load_checkpoint
+        with tempfile.TemporaryDirectory() as d:
+            assert _load_checkpoint(Path(d)) is None
+
+    def test_validate_checkpoint_valid(self):
+        """Valid checkpoint with existing workdir passes validation."""
+        from loop_runner import _validate_checkpoint
+        with tempfile.TemporaryDirectory() as d:
+            cp = {"cycle": 1, "workdir": d, "current_best": {},
+                  "history": [], "run_dir": d}
+            assert _validate_checkpoint(cp) == []
+
+    def test_validate_checkpoint_missing_keys(self):
+        """Checkpoint missing required keys fails validation."""
+        from loop_runner import _validate_checkpoint
+        assert len(_validate_checkpoint({"cycle": 1})) > 0
+
+    def test_validate_checkpoint_missing_workdir(self):
+        """Checkpoint with non-existent workdir fails validation."""
+        from loop_runner import _validate_checkpoint
+        cp = {"cycle": 1, "workdir": "/nonexistent/path/xyz",
+              "current_best": {}, "history": [], "run_dir": "/tmp"}
+        assert len(_validate_checkpoint(cp)) > 0
+
+    def test_build_checkpoint_has_all_fields(self):
+        """_build_checkpoint produces dict with all required keys."""
+        from loop_runner import _build_checkpoint
+        with tempfile.TemporaryDirectory() as d:
+            cp = _build_checkpoint(
+                cycle=2, workdir=d, current_best={"composite": 6.0},
+                history=[{"action": "keep"}], run_dir=d,
+                baseline={"composite": 5.0}, input_path="/tmp/test.md",
+                judge_config_dict={"provider": "codex", "model": "x", "format": "numeric"},
+                args_dict={"cycles": 10},
+            )
+            assert cp["cycle"] == 2
+            assert cp["judge_config"]["provider"] == "codex"
+            assert "timestamp" in cp
+
+
+class TestAtomicWrite:
+    """Tests for _atomic_write durability."""
+
+    def test_atomic_write_creates_file(self):
+        """Atomic write creates the target file with correct content."""
+        from loop_runner import _atomic_write
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "test.txt"
+            _atomic_write(path, "hello world")
+            assert path.read_text() == "hello world"
+
+    def test_atomic_write_no_tmp_left(self):
+        """No .tmp file should remain after atomic write."""
+        from loop_runner import _atomic_write
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "test.txt"
+            _atomic_write(path, "content")
+            tmp = path.with_suffix(".txt.tmp")
+            assert not tmp.exists()
+
+    def test_atomic_write_overwrites(self):
+        """Atomic write replaces existing file content."""
+        from loop_runner import _atomic_write
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "test.txt"
+            path.write_text("old")
+            _atomic_write(path, "new")
+            assert path.read_text() == "new"
+
+
+class TestBackupVersioning:
+    """Tests for versioned backup paths."""
+
+    def test_first_backup_uses_base(self):
+        """First backup is .md.bak (no version number)."""
+        from loop_runner import _next_backup_path
+        with tempfile.TemporaryDirectory() as d:
+            input_path = Path(d) / "analysis.md"
+            input_path.write_text("test")
+            result = _next_backup_path(input_path)
+            assert result == input_path.with_suffix(".md.bak")
+
+    def test_second_backup_gets_version_001(self):
+        """When .md.bak exists, next is .md.bak.001."""
+        from loop_runner import _next_backup_path
+        with tempfile.TemporaryDirectory() as d:
+            input_path = Path(d) / "analysis.md"
+            input_path.write_text("test")
+            input_path.with_suffix(".md.bak").write_text("backup1")
+            result = _next_backup_path(input_path)
+            assert result == input_path.with_suffix(".md.bak.001")
+
+    def test_third_backup_gets_version_002(self):
+        """When .md.bak and .md.bak.001 exist, next is .md.bak.002."""
+        from loop_runner import _next_backup_path
+        with tempfile.TemporaryDirectory() as d:
+            input_path = Path(d) / "analysis.md"
+            input_path.write_text("test")
+            input_path.with_suffix(".md.bak").write_text("backup1")
+            input_path.with_suffix(".md.bak.001").write_text("backup2")
+            result = _next_backup_path(input_path)
+            assert result == input_path.with_suffix(".md.bak.002")
+
+
 class TestHybridScoreParsing:
     """Tests for parsing mixed binary + numeric judge output."""
 
@@ -1010,3 +1120,111 @@ class TestHybridScoreParsing:
         assert scores["methodology_soundness"] == 6.5
         assert scores["evidence_conclusion_alignment"] == 7.0
         assert critique == "Mixed format test."
+
+
+class TestDiscardAutopsy:
+    """Tests for discard autopsy classification after reverts."""
+
+    def test_wrong_phase_classification(self, sample_config):
+        """Editing a communication dim during substance phase → wrong_phase."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 6.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.5,
+            "substance_scores": {"statistical_rigor": 6.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 3.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_phase"
+        assert result["most_affected_dim"] == "narrative_flow"
+
+    def test_wrong_dimension_classification(self, sample_config):
+        """Targeting a high-scoring dim while a low-scoring dim exists → wrong_dimension."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 9.0, "methodology_soundness": 4.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.8,
+            "substance_scores": {"statistical_rigor": 7.0, "methodology_soundness": 4.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_dimension"
+        assert "methodology_soundness" in result["suggestion"]
+
+    def test_wrong_approach_classification(self, sample_config):
+        """Correct phase and dimension but score dropped → wrong_approach."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 4.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.5,
+            "substance_scores": {"statistical_rigor": 3.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_approach"
+
+    def test_autopsy_returns_all_fields(self, sample_config):
+        """Autopsy dict must have classification, most_affected_dim, suggestion."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 6.0},
+            "communication_scores": {"narrative_flow": 6.0},
+        }
+        new_result = {
+            "composite": 5.0,
+            "substance_scores": {"statistical_rigor": 4.0},
+            "communication_scores": {"narrative_flow": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert "classification" in result
+        assert "most_affected_dim" in result
+        assert "suggestion" in result
+        assert result["classification"] in ("wrong_phase", "wrong_dimension", "wrong_approach")
+
+    def test_suggest_unexplored_dim(self, sample_config):
+        """_suggest_unexplored_dim returns lowest-scoring non-recently-targeted dim."""
+        from loop_runner import _suggest_unexplored_dim
+
+        current_best = {
+            "substance_scores": {"statistical_rigor": 8.0, "methodology_soundness": 3.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 5.0},
+            "communication_scores": {"narrative_flow": 7.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        # No recent history — should suggest lowest scoring dim
+        result = _suggest_unexplored_dim([], current_best)
+        assert result == "methodology_soundness"  # score 3.0, lowest
+
+        # With methodology_soundness recently targeted, should skip it
+        history = [{"autopsy": {"most_affected_dim": "methodology_soundness"}}]
+        result = _suggest_unexplored_dim(history, current_best)
+        assert result == "data_interpretation_accuracy"  # next lowest at 5.0

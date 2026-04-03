@@ -81,6 +81,16 @@ Refine communication clarity for the target audience:
 8. **NEVER remove quantitative claims to improve readability.** The fix for
    "too much data" is better framing, not deletion.
 
+9. **Learn from discard autopsies.** If the JUDGE FEEDBACK includes a
+   DISCARD AUTOPSY section, read it carefully — it tells you WHY the
+   previous edit was reverted (wrong_phase, wrong_dimension, or
+   wrong_approach) and suggests which dimension to target next. Do NOT
+   repeat the same kind of edit that was just reverted. If classified as
+   wrong_phase, switch to a dimension appropriate for the current phase.
+   If wrong_dimension, target the suggested lower-scoring dimension
+   instead. If wrong_approach, try a fundamentally different technique
+   on the same dimension.
+
 ## Output Requirements
 
 Your output MUST:
