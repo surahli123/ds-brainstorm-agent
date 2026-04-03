@@ -342,7 +342,11 @@ class JudgeConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "JudgeConfig":
-        return cls(provider=d["provider"], model=d["model"], format=d["format"])
+        return cls(
+            provider=d.get("provider", "codex"),
+            model=d.get("model", "deepseek/deepseek-v3.2"),
+            format=d.get("format", "numeric"),
+        )
 
 
 _default_config = JudgeConfig()

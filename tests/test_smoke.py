@@ -995,19 +995,19 @@ class TestCheckpoint:
         with tempfile.TemporaryDirectory() as d:
             cp = {"cycle": 1, "workdir": d, "current_best": {},
                   "history": [], "run_dir": d}
-            assert _validate_checkpoint(cp) is True
+            assert _validate_checkpoint(cp) == []
 
     def test_validate_checkpoint_missing_keys(self):
         """Checkpoint missing required keys fails validation."""
         from loop_runner import _validate_checkpoint
-        assert _validate_checkpoint({"cycle": 1}) is False
+        assert len(_validate_checkpoint({"cycle": 1})) > 0
 
     def test_validate_checkpoint_missing_workdir(self):
         """Checkpoint with non-existent workdir fails validation."""
         from loop_runner import _validate_checkpoint
         cp = {"cycle": 1, "workdir": "/nonexistent/path/xyz",
               "current_best": {}, "history": [], "run_dir": "/tmp"}
-        assert _validate_checkpoint(cp) is False
+        assert len(_validate_checkpoint(cp)) > 0
 
     def test_build_checkpoint_has_all_fields(self):
         """_build_checkpoint produces dict with all required keys."""

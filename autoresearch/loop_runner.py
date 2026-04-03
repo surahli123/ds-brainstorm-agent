@@ -674,10 +674,14 @@ def _atomic_write(path: Path | str, content: str):
 
     Prevents partial writes on crash — either the old file or the
     new file exists, never a half-written file.
+    Uses explicit flush + fsync to ensure data hits disk before rename.
     """
     path = Path(path)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(content)
+    with open(tmp_path, "w") as f:
+        f.write(content)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(str(tmp_path), str(path))
 
 
@@ -697,14 +701,17 @@ def _load_checkpoint(run_dir: Path) -> dict | None:
         return None
 
 
-def _validate_checkpoint(checkpoint: dict) -> bool:
-    """Validate checkpoint has required keys and workdir exists."""
+def _validate_checkpoint(checkpoint: dict) -> list[str]:
+    """Validate checkpoint has required keys and workdir exists. Returns list of errors (empty = valid)."""
+    errors = []
     required = {"cycle", "workdir", "current_best", "history", "run_dir"}
-    if not required.issubset(checkpoint.keys()):
-        return False
-    if not Path(checkpoint["workdir"]).exists():
-        return False
-    return True
+    missing = required - set(checkpoint.keys())
+    if missing:
+        errors.append(f"Missing required keys: {missing}")
+    workdir = checkpoint.get("workdir", "")
+    if not workdir or not Path(workdir).exists():
+        errors.append(f"Workdir missing or does not exist: {workdir}")
+    return errors
 
 
 def _build_checkpoint(
@@ -902,12 +909,14 @@ def classify_discard(
     # Classify
     if most_affected and most_affected not in allowed and phase != "structural":
         classification = "wrong_phase"
-        suggestion = (
-            f"Edited '{most_affected}' but current phase is '{phase}'. "
-            f"Focus on {phase} dimensions instead. "
-            f"Try targeting '{suggestion_dim}'." if suggestion_dim
-            else f"Edited '{most_affected}' but current phase is '{phase}'."
-        )
+        if suggestion_dim:
+            suggestion = (
+                f"Edited '{most_affected}' but current phase is '{phase}'. "
+                f"Focus on {phase} dimensions instead. "
+                f"Try targeting '{suggestion_dim}'."
+            )
+        else:
+            suggestion = f"Edited '{most_affected}' but current phase is '{phase}'."
     elif suggestion_dim and most_affected != suggestion_dim:
         # Check if the most affected dim is already high-scoring
         all_scores = {**current_best.get("substance_scores", {}),
@@ -957,8 +966,11 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
         print(f"ERROR: No checkpoint.json found in {resume_dir}")
         sys.exit(1)
 
-    if not _validate_checkpoint(checkpoint):
-        print(f"ERROR: Invalid checkpoint — workdir missing or required keys absent")
+    errors = _validate_checkpoint(checkpoint)
+    if errors:
+        print("ERROR: Invalid checkpoint:")
+        for e in errors:
+            print(f"  \u2717 {e}")
         sys.exit(1)
 
     print(f"Resuming from checkpoint (cycle {checkpoint['cycle']})...")
@@ -973,6 +985,13 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
     baseline = checkpoint["baseline"]
     input_path = Path(checkpoint["input_path"])
     analysis_dest = Path(workdir) / "analysis.md"
+
+    # Verify git workdir is clean before resuming — a crash after write_text
+    # but before checkpoint could leave uncommitted changes
+    git_status = _git(workdir, "status", "--porcelain")
+    if git_status.stdout.strip():
+        print("  [WARN] Workdir has uncommitted changes from crashed cycle — resetting to last committed state")
+        _git(workdir, "checkout", "--", "analysis.md")
 
     # Restore judge config
     jc_dict = checkpoint.get("judge_config", {})
@@ -1069,13 +1088,55 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
             if consecutive_writer_failures >= 3:
                 print("  HALT: 3 consecutive writer failures")
                 history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_failure"})
+                _log_scores(run_dir, {
+                    "cycle": cycle, "action": "skip", "reason": "writer_failure",
+                    "timestamp": datetime.datetime.now().isoformat(),
+                })
+                _save_checkpoint(run_dir, _build_checkpoint(
+                    cycle=cycle, workdir=workdir,
+                    current_best=current_best, history=history,
+                    run_dir=str(run_dir), baseline=baseline,
+                    input_path=str(input_path),
+                    judge_config_dict=judge_config.to_dict(),
+                    args_dict={"cycles": total_cycles, "provider": provider, "runs": num_runs,
+                                "auto_approve": auto_approve, "max_total_cycles": max_total_cycles,
+                                "keep_workdir": keep_workdir},
+                ))
                 break
             history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_failure"})
+            _log_scores(run_dir, {
+                "cycle": cycle, "action": "skip", "reason": "writer_failure",
+                "timestamp": datetime.datetime.now().isoformat(),
+            })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={"cycles": total_cycles, "provider": provider, "runs": num_runs,
+                            "auto_approve": auto_approve, "max_total_cycles": max_total_cycles,
+                            "keep_workdir": keep_workdir},
+            ))
             continue
 
         if not validate_writer_output(improved_text, analysis_text):
             print("  [WARN] Writer output failed validation — skipping cycle")
             history.append({"cycle": cycle, "action": "skip", "judge_failure": False, "reason": "writer_validation_failed"})
+            _log_scores(run_dir, {
+                "cycle": cycle, "action": "skip", "reason": "writer_validation_failed",
+                "timestamp": datetime.datetime.now().isoformat(),
+            })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={"cycles": total_cycles, "provider": provider, "runs": num_runs,
+                            "auto_approve": auto_approve, "max_total_cycles": max_total_cycles,
+                            "keep_workdir": keep_workdir},
+            ))
             continue
 
         consecutive_writer_failures = 0
@@ -1099,6 +1160,20 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
             print("  [WARN] Judge failure — skipping cycle")
             _git_revert_file(workdir)
             history.append({"cycle": cycle, "action": "skip", "judge_failure": True})
+            _log_scores(run_dir, {
+                "cycle": cycle, "action": "skip", "reason": "judge_failure",
+                "timestamp": datetime.datetime.now().isoformat(),
+            })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={"cycles": total_cycles, "provider": provider, "runs": num_runs,
+                            "auto_approve": auto_approve, "max_total_cycles": max_total_cycles,
+                            "keep_workdir": keep_workdir},
+            ))
             continue
 
         first_result = evaluate.compute_composite(sub_scores, comm_scores, config)
@@ -1411,6 +1486,19 @@ def run_loop(args):
                     "cycle": cycle, "action": "skip", "judge_failure": False,
                     "reason": "writer_failure",
                 })
+                _save_checkpoint(run_dir, _build_checkpoint(
+                    cycle=cycle, workdir=workdir,
+                    current_best=current_best, history=history,
+                    run_dir=str(run_dir), baseline=baseline,
+                    input_path=str(input_path),
+                    judge_config_dict=judge_config.to_dict(),
+                    args_dict={
+                        "cycles": args.cycles, "provider": args.provider,
+                        "runs": num_runs, "auto_approve": args.auto_approve,
+                        "max_total_cycles": args.max_total_cycles,
+                        "keep_workdir": args.keep_workdir,
+                    },
+                ))
                 break
             history.append({
                 "cycle": cycle, "action": "skip", "judge_failure": False,
@@ -1420,6 +1508,19 @@ def run_loop(args):
                 "cycle": cycle, "action": "skip", "reason": "writer_failure",
                 "timestamp": datetime.datetime.now().isoformat(),
             })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={
+                    "cycles": args.cycles, "provider": args.provider,
+                    "runs": num_runs, "auto_approve": args.auto_approve,
+                    "max_total_cycles": args.max_total_cycles,
+                    "keep_workdir": args.keep_workdir,
+                },
+            ))
             continue
 
         # Validate writer output (CEO review #14)
@@ -1433,6 +1534,19 @@ def run_loop(args):
                 "cycle": cycle, "action": "skip", "reason": "writer_validation_failed",
                 "timestamp": datetime.datetime.now().isoformat(),
             })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={
+                    "cycles": args.cycles, "provider": args.provider,
+                    "runs": num_runs, "auto_approve": args.auto_approve,
+                    "max_total_cycles": args.max_total_cycles,
+                    "keep_workdir": args.keep_workdir,
+                },
+            ))
             continue
 
         consecutive_writer_failures = 0  # reset on success
@@ -1469,6 +1583,19 @@ def run_loop(args):
                 "cycle": cycle, "action": "skip", "reason": "judge_failure",
                 "timestamp": datetime.datetime.now().isoformat(),
             })
+            _save_checkpoint(run_dir, _build_checkpoint(
+                cycle=cycle, workdir=workdir,
+                current_best=current_best, history=history,
+                run_dir=str(run_dir), baseline=baseline,
+                input_path=str(input_path),
+                judge_config_dict=judge_config.to_dict(),
+                args_dict={
+                    "cycles": args.cycles, "provider": args.provider,
+                    "runs": num_runs, "auto_approve": args.auto_approve,
+                    "max_total_cycles": args.max_total_cycles,
+                    "keep_workdir": args.keep_workdir,
+                },
+            ))
             continue
 
         # Multi-run averaging: reuse first run, add N-1 more, average all.
