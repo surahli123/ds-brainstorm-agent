@@ -1120,3 +1120,111 @@ class TestHybridScoreParsing:
         assert scores["methodology_soundness"] == 6.5
         assert scores["evidence_conclusion_alignment"] == 7.0
         assert critique == "Mixed format test."
+
+
+class TestDiscardAutopsy:
+    """Tests for discard autopsy classification after reverts."""
+
+    def test_wrong_phase_classification(self, sample_config):
+        """Editing a communication dim during substance phase → wrong_phase."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 6.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.5,
+            "substance_scores": {"statistical_rigor": 6.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 3.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_phase"
+        assert result["most_affected_dim"] == "narrative_flow"
+
+    def test_wrong_dimension_classification(self, sample_config):
+        """Targeting a high-scoring dim while a low-scoring dim exists → wrong_dimension."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 9.0, "methodology_soundness": 4.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.8,
+            "substance_scores": {"statistical_rigor": 7.0, "methodology_soundness": 4.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_dimension"
+        assert "methodology_soundness" in result["suggestion"]
+
+    def test_wrong_approach_classification(self, sample_config):
+        """Correct phase and dimension but score dropped → wrong_approach."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 4.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        new_result = {
+            "composite": 5.5,
+            "substance_scores": {"statistical_rigor": 3.0, "methodology_soundness": 6.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 6.0},
+            "communication_scores": {"narrative_flow": 6.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert result["classification"] == "wrong_approach"
+
+    def test_autopsy_returns_all_fields(self, sample_config):
+        """Autopsy dict must have classification, most_affected_dim, suggestion."""
+        from loop_runner import classify_discard
+
+        current_best = {
+            "composite": 6.0,
+            "substance_scores": {"statistical_rigor": 6.0},
+            "communication_scores": {"narrative_flow": 6.0},
+        }
+        new_result = {
+            "composite": 5.0,
+            "substance_scores": {"statistical_rigor": 4.0},
+            "communication_scores": {"narrative_flow": 6.0},
+        }
+        result = classify_discard([], new_result, current_best, "substance", sample_config)
+        assert "classification" in result
+        assert "most_affected_dim" in result
+        assert "suggestion" in result
+        assert result["classification"] in ("wrong_phase", "wrong_dimension", "wrong_approach")
+
+    def test_suggest_unexplored_dim(self, sample_config):
+        """_suggest_unexplored_dim returns lowest-scoring non-recently-targeted dim."""
+        from loop_runner import _suggest_unexplored_dim
+
+        current_best = {
+            "substance_scores": {"statistical_rigor": 8.0, "methodology_soundness": 3.0,
+                                 "evidence_conclusion_alignment": 6.0, "data_interpretation_accuracy": 5.0},
+            "communication_scores": {"narrative_flow": 7.0, "audience_calibration": 6.0,
+                                     "visualization_effectiveness": 6.0, "executive_summary_clarity": 6.0},
+        }
+        # No recent history — should suggest lowest scoring dim
+        result = _suggest_unexplored_dim([], current_best)
+        assert result == "methodology_soundness"  # score 3.0, lowest
+
+        # With methodology_soundness recently targeted, should skip it
+        history = [{"autopsy": {"most_affected_dim": "methodology_soundness"}}]
+        result = _suggest_unexplored_dim(history, current_best)
+        assert result == "data_interpretation_accuracy"  # next lowest at 5.0

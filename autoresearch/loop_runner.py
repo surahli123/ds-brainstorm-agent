@@ -817,6 +817,131 @@ def _human_gate_prompt(cycle: int, improvement: float, new_composite: float) -> 
 
 
 # ─────────────────────────────────────────────
+# Discard Autopsy — learn from reverts
+# ─────────────────────────────────────────────
+
+def _find_most_affected_dimension(prev_scores: dict, new_scores: dict) -> str | None:
+    """Find the dimension with the largest absolute score change.
+
+    Merges substance + communication scores and compares prev vs new.
+    Returns the dimension name, or None if no overlap.
+    """
+    prev_all = {**prev_scores.get("substance_scores", {}),
+                **prev_scores.get("communication_scores", {})}
+    new_all = {**new_scores.get("substance_scores", {}),
+               **new_scores.get("communication_scores", {})}
+
+    common = set(prev_all.keys()) & set(new_all.keys())
+    if not common:
+        return None
+
+    return max(common, key=lambda d: abs(new_all[d] - prev_all[d]))
+
+
+def _suggest_unexplored_dim(history: list[dict], current_best: dict) -> str | None:
+    """Suggest the lowest-scoring dimension that hasn't been targeted recently.
+
+    Looks at current_best scores, finds the lowest-scoring dimension,
+    skipping any that were the most_affected_dim in the last 3 cycles.
+    """
+    all_scores = {**current_best.get("substance_scores", {}),
+                  **current_best.get("communication_scores", {})}
+    if not all_scores:
+        return None
+
+    # Dimensions targeted in recent reverts
+    recent_targeted = set()
+    for h in history[-3:]:
+        autopsy = h.get("autopsy", {})
+        if autopsy.get("most_affected_dim"):
+            recent_targeted.add(autopsy["most_affected_dim"])
+
+    # Sort by score ascending, pick first not recently targeted
+    for dim, score in sorted(all_scores.items(), key=lambda x: x[1]):
+        if dim not in recent_targeted:
+            return dim
+
+    # All dims recently targeted — just return the lowest
+    return min(all_scores, key=all_scores.get)
+
+
+def classify_discard(
+    history: list[dict],
+    new_result: dict,
+    current_best: dict,
+    phase: str,
+    config: dict,
+) -> dict:
+    """Classify a discarded edit into one of three categories.
+
+    Returns a dict with:
+      - classification: "wrong_phase", "wrong_dimension", or "wrong_approach"
+      - most_affected_dim: dimension with largest absolute change
+      - suggestion: actionable guidance for the writer's next attempt
+
+    Classification logic:
+      - wrong_phase: the most affected dimension doesn't belong to the current phase
+      - wrong_dimension: the most affected dim scored well, but lowest dim was ignored
+      - wrong_approach: correct phase + correct dimension, but score still dropped
+    """
+    most_affected = _find_most_affected_dimension(current_best, new_result)
+
+    # Determine which dimensions belong to each phase
+    sub_dims = set(config.get("substance_dimensions", {}).keys())
+    comm_dims = set(config.get("communication_dimensions", {}).keys())
+
+    phase_dims = {
+        "structural": sub_dims | comm_dims,  # structural can touch anything
+        "substance": sub_dims,
+        "polish": comm_dims,
+    }
+    allowed = phase_dims.get(phase, sub_dims | comm_dims)
+
+    suggestion_dim = _suggest_unexplored_dim(history, current_best)
+
+    # Classify
+    if most_affected and most_affected not in allowed and phase != "structural":
+        classification = "wrong_phase"
+        suggestion = (
+            f"Edited '{most_affected}' but current phase is '{phase}'. "
+            f"Focus on {phase} dimensions instead. "
+            f"Try targeting '{suggestion_dim}'." if suggestion_dim
+            else f"Edited '{most_affected}' but current phase is '{phase}'."
+        )
+    elif suggestion_dim and most_affected != suggestion_dim:
+        # Check if the most affected dim is already high-scoring
+        all_scores = {**current_best.get("substance_scores", {}),
+                      **current_best.get("communication_scores", {})}
+        affected_score = all_scores.get(most_affected, 5.0)
+        suggestion_score = all_scores.get(suggestion_dim, 5.0)
+        if affected_score > suggestion_score + 1.0:
+            classification = "wrong_dimension"
+            suggestion = (
+                f"Targeted '{most_affected}' (score {affected_score:.1f}) but "
+                f"'{suggestion_dim}' (score {suggestion_score:.1f}) needs more help. "
+                f"Try improving '{suggestion_dim}' next."
+            )
+        else:
+            classification = "wrong_approach"
+            suggestion = (
+                f"Right area ('{most_affected}') but the edit hurt more than helped. "
+                f"Try a different technique for '{most_affected}', or pivot to '{suggestion_dim}'."
+            )
+    else:
+        classification = "wrong_approach"
+        suggestion = (
+            f"Edit targeted '{most_affected or 'unknown'}' but score dropped. "
+            f"Try a completely different approach."
+        )
+
+    return {
+        "classification": classification,
+        "most_affected_dim": most_affected,
+        "suggestion": suggestion,
+    }
+
+
+# ─────────────────────────────────────────────
 # Resume from Checkpoint
 # ─────────────────────────────────────────────
 
@@ -914,12 +1039,18 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
             last = history[-1]
             sub_crit = last.get("sub_critique", "")
             comm_crit = last.get("comm_critique", "")
-            if sub_crit or comm_crit:
-                parts = []
-                if sub_crit:
-                    parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
-                if comm_crit:
-                    parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+            parts = []
+            if sub_crit:
+                parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
+            if comm_crit:
+                parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+            last_autopsy = last.get("autopsy", {})
+            if last_autopsy.get("suggestion"):
+                parts.append(
+                    f"DISCARD AUTOPSY ({last_autopsy['classification']}):\n"
+                    f"{last_autopsy['suggestion']}"
+                )
+            if parts:
                 judge_feedback = "\n\n".join(parts)
 
         improved_text = writer_fn(
@@ -986,12 +1117,15 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
             else:
                 action = "revert"
 
+        autopsy = {}
         if action == "keep":
             print(f"  ✓ KEEP (improvement: {improvement:+.2f})")
             current_best = new_result
         elif action == "revert":
             print(f"  ✗ REVERT (improvement: {improvement:+.2f})")
             _git_revert_file(workdir)
+            autopsy = classify_discard(history, new_result, current_best, phase, config)
+            print(f"  AUTOPSY: {autopsy['classification']} — {autopsy['suggestion']}")
 
         history.append({
             "cycle": cycle, "action": action, "judge_failure": False,
@@ -999,6 +1133,7 @@ def _run_loop_resume(args, project_root: Path, resume_dir: Path):
             "improvement": round(improvement, 4),
             "phase": phase, "hypothesis": f"{phase} improvement",
             "sub_critique": sub_critique or "", "comm_critique": comm_critique or "",
+            "autopsy": autopsy,
         })
         _log_scores(run_dir, {"cycle": cycle, "action": action, "timestamp": datetime.datetime.now().isoformat(), **new_result})
 
@@ -1241,12 +1376,19 @@ def run_loop(args):
             last = history[-1]
             sub_crit = last.get("sub_critique", "")
             comm_crit = last.get("comm_critique", "")
-            if sub_crit or comm_crit:
-                parts = []
-                if sub_crit:
-                    parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
-                if comm_crit:
-                    parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+            parts = []
+            if sub_crit:
+                parts.append(f"SUBSTANCE JUDGE:\n{sub_crit}")
+            if comm_crit:
+                parts.append(f"COMMUNICATION JUDGE:\n{comm_crit}")
+            # Append discard autopsy suggestion if previous cycle was reverted
+            last_autopsy = last.get("autopsy", {})
+            if last_autopsy.get("suggestion"):
+                parts.append(
+                    f"DISCARD AUTOPSY ({last_autopsy['classification']}):\n"
+                    f"{last_autopsy['suggestion']}"
+                )
+            if parts:
                 judge_feedback = "\n\n".join(parts)
 
         improved_text = writer_fn(
@@ -1350,12 +1492,16 @@ def run_loop(args):
                 action = "revert"
 
         # ── 5. Execute decision ──
+        autopsy = {}
         if action == "keep":
             print(f"  ✓ KEEP (improvement: {improvement:+.2f})")
             current_best = new_result
         elif action == "revert":
             print(f"  ✗ REVERT (improvement: {improvement:+.2f})")
             _git_revert_file(workdir)
+            # Discard autopsy — classify why this edit was reverted
+            autopsy = classify_discard(history, new_result, current_best, phase, config)
+            print(f"  AUTOPSY: {autopsy['classification']} — {autopsy['suggestion']}")
 
         # ── 6. Log ──
         history.append({
@@ -1368,6 +1514,7 @@ def run_loop(args):
             "hypothesis": f"{phase} improvement",
             "sub_critique": sub_critique or "",
             "comm_critique": comm_critique or "",
+            "autopsy": autopsy,
         })
         _log_scores(run_dir, {
             "cycle": cycle,
