@@ -361,6 +361,59 @@ class TestTargetedAdversarialPushback:
 
 
 # ─────────────────────────────────────────────
+# Improvement #6: Quantitative Threshold Push
+# ─────────────────────────────────────────────
+
+class TestQuantitativeThresholdPush:
+    """Verify Step 3.2.2 pushes for numeric commitments during Socratic dialogue."""
+
+    def test_step_3_2_2_exists(self, skill_md):
+        """SKILL.md must have Step 3.2.2 for quantitative threshold push."""
+        assert "Step 3.2.2" in skill_md, (
+            "SKILL.md missing Step 3.2.2 (Quantitative Threshold Push)"
+        )
+
+    def test_threshold_patterns_listed(self, skill_md):
+        """Step 3.2.2 must list common threshold patterns to push on."""
+        step_start = skill_md.find("Step 3.2.2")
+        step_end = skill_md.find("Step 3.3", step_start)
+        section = skill_md[step_start:step_end]
+        assert "baseline" in section.lower() or "comparison" in section.lower(), (
+            "Step 3.2.2 must mention baseline/comparison thresholds"
+        )
+        assert "acceptance threshold" in section.lower(), (
+            "Step 3.2.2 must mention acceptance thresholds"
+        )
+
+    def test_threshold_push_has_verbatim_quote_instruction(self, skill_md):
+        """Step 3.2.2 must require verbatim quotes like Step 3.2."""
+        step_start = skill_md.find("Step 3.2.2")
+        step_end = skill_md.find("Step 3.3", step_start)
+        section = skill_md[step_start:step_end]
+        assert "VERBATIM" in section, (
+            "Step 3.2.2 must require VERBATIM quotes from persona findings"
+        )
+
+    def test_threshold_push_has_limit(self, skill_md):
+        """Step 3.2.2 must cap threshold questions per round to avoid overload."""
+        step_start = skill_md.find("Step 3.2.2")
+        step_end = skill_md.find("Step 3.3", step_start)
+        section = skill_md[step_start:step_end]
+        assert "at most" in section.lower() or "per round" in section.lower(), (
+            "Step 3.2.2 must limit threshold questions per round"
+        )
+
+    def test_unresolved_thresholds_tracked(self, skill_md):
+        """Unresolved thresholds must flow to Phase 4 Open Questions."""
+        step_start = skill_md.find("Step 3.2.2")
+        step_end = skill_md.find("Step 3.3", step_start)
+        section = skill_md[step_start:step_end]
+        assert "Open Questions" in section or "Phase 4" in section, (
+            "Step 3.2.2 must specify that unresolved thresholds appear in Phase 4 output"
+        )
+
+
+# ─────────────────────────────────────────────
 # Improvement #5: Verdict Assessment Banner
 # ─────────────────────────────────────────────
 

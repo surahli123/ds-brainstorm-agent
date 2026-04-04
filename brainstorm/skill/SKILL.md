@@ -802,6 +802,43 @@ perspectives shared — they're easy to overlook because no persona flagged them
 - Blind spot escalation has the same weight as persona concerns — it's a pushback source,
   not a higher-priority override.
 
+### Step 3.2.2: Quantitative Threshold Push
+
+**When to push:** Starting from round 2 onwards, scan unaddressed persona findings for
+any that imply a numeric decision the user hasn't committed to. Common patterns:
+
+- **Baseline/comparison:** "What score constitutes good?" "What's the null hypothesis?"
+  → Push: *"The [persona] raised [concern]. What number would make you act? If
+  Precision@k drops below ___, what do you do differently?"*
+
+- **Acceptance threshold:** "Is this agreement rate high enough?" "Is this sample sufficient?"
+  → Push: *"You're planning to recalibrate the judge. Below what agreement rate do you
+  stop trusting the scores and rework the prompt? Pick a number."*
+
+- **Effect size / significance:** "How much improvement is worth shipping?"
+  → Push: *"If the new Search Skill improves Precision@k by 0.02, is that worth shipping?
+  What delta is your minimum?"*
+
+**Why this matters:** Conceptual decisions ("use Precision@k", "compare agent vs human
+queries") feel resolved but are actually incomplete without quantitative commitments.
+The brainstorm can produce a doc where every design decision is "decided" but no
+decision is actionable because there are no thresholds. An eng review will catch these,
+but the brainstorm should close them first.
+
+**How to push:**
+> *"You've made the right conceptual call — [decision]. But the [persona name]'s
+> concern was quantitative: '[VERBATIM quote]'. Without a number, this decision
+> isn't actionable. What threshold would make you [act/stop/rework]?"*
+
+**Rules:**
+- Push at most 2 threshold questions per round — don't turn the dialogue into a
+  parameter-setting exercise.
+- If the user says "I don't know yet" or "need data first," accept it — but reframe
+  as: *"OK, what data would you need to pick that number, and is collecting it a
+  prerequisite or can it run in parallel with the eval build?"*
+- Track unresolved thresholds in the ledger. If any remain at Phase 4, list them
+  explicitly in the "Open Questions" section of the summary output.
+
 ### Step 3.3: Re-invoke a Subagent (Rare, Only When Needed)
 
 **When to re-invoke:** Only if the user fundamentally changes the analysis plan in a way
