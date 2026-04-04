@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.8.0] - 2026-04-03 — Domain Expert Persona, Search Skills Eval Framework
+
+### Added
+- 4th persona: Domain Expert — activated by `--domain`, challenges domain validity with established frameworks and benchmarks
+- Domain Challenge Patterns section (§ 9) in search-relevance.md — 7 search-specific challenge patterns (BEIR/MTEB benchmarks, information need model, retrieval vs extractability, query distribution shift, positional metric transfer, skill vs trajectory eval, judge calibration transfer)
+- Conditional 4th dispatch in SKILL.md Phase 1 (fires only when `--domain` specified)
+- Phase 2 synthesis updated with Domain Expert tensions (domain vs methodology, domain vs feasibility)
+- 10 new brainstorm tests (61 brainstorm total, 151 full suite)
+- Search Skills evaluation framework document (docs/search-skills-eval-framework.md)
+
+### Validated
+- `--knowledge-dir` tested with Search Metric Analyzer knowledge files (6 YAML files) — summaries loaded correctly, all 3 personas cited specific baselines and failure modes from knowledge files
+- Brainstorm run on "How to evaluate Search Skills in Agentic Search" confirmed domain expertise gap: personas challenged methodology/business/feasibility but missed IR-specific concerns (BEIR, information need model, answer extractability)
+- Eng reviewed as Search IC9: 3 architecture decisions (challenge patterns in domain file, --domain-only trigger, accept compute cost)
+
+### Design Decisions
+- Challenge patterns live in domain files (not persona file) — adding domain expertise is "add patterns to your .md", no code changes per domain
+- Domain Expert fires only with `--domain` (not `--knowledge-dir` alone) — knowledge files provide data but not reasoning frameworks
+- Accepted ~33% compute increase when `--domain` used — users opting into domain depth expect thoroughness
+- Persona uncertainty type: domain validity (distinct from statistical/value/feasibility)
+
+### Context
+- Baidu "Agentic Search" paper (CCIR 2026) provided key context: Search Skills architecture, PRM+ORM reward design, multi-agent listwise inspection
+- Search Skills eval framework proposes 3 failure classes: recall failure, precision failure, trust failure (silent killer unique to agentic search)
+
 ## [1.7.0] - 2026-04-02 — Targeted Adversarial Pushback, Verdict Assessment, Eval-001 Validated
 
 ### Added
