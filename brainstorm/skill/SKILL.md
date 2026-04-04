@@ -1,10 +1,11 @@
 ---
 name: ds-brainstorm
 description: >
-  Multi-persona Socratic brainstorming for DS analysis planning. Three subagents
-  (Methodology Critic, Stakeholder Advocate, Pragmatist) debate your analysis plan
-  with search-grounded audience intelligence. Use when planning a new DS analysis,
-  exploring analytical approaches, or stress-testing an analysis plan before execution.
+  Multi-persona Socratic brainstorming for DS analysis planning. Three core subagents
+  (Methodology Critic, Stakeholder Advocate, Pragmatist) plus an optional Domain Expert
+  (activated by --domain) debate your analysis plan with search-grounded audience
+  intelligence. Use when planning a new DS analysis, exploring analytical approaches,
+  or stress-testing an analysis plan before execution.
   Trigger: brainstorm, debate, challenge my analysis, help me think through this analysis.
 ---
 
@@ -12,12 +13,13 @@ description: >
 
 ## Overview
 
-Three independent perspectives challenge your analysis plan simultaneously:
+Three core perspectives challenge your analysis plan simultaneously:
 1. **Methodology Critic** — Is this analysis SOUND? (rigor, confounders, statistical methods)
 2. **Stakeholder Advocate** — Will this analysis INFLUENCE decisions? (framing, metrics execs care about)
 3. **Pragmatist** — Can this analysis SHIP? (data availability, timeline, feasibility)
+4. **Domain Expert** *(optional, requires `--domain`)* — Is this consistent with how the DOMAIN actually works? (established frameworks, benchmarks, domain-specific pitfalls)
 
-After the three-perspective challenge, you engage in a Socratic dialogue loop where the
+After the multi-perspective challenge, you engage in a Socratic dialogue loop where the
 orchestrator pushes back on your responses until your analysis plan is sharp.
 
 ## Input
@@ -25,7 +27,7 @@ orchestrator pushes back on your responses until your analysis plan is sharp.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | Analysis question or plan | Yes | What you want to analyze, explore, or investigate |
-| `--domain` | No | Domain knowledge to load (e.g., `search-relevance`, `experimentation`). Enriches all 3 personas with domain-specific vocabulary and concerns. |
+| `--domain` | No | Domain knowledge to load (e.g., `search-relevance`, `experimentation`). Enriches all personas with domain-specific vocabulary and concerns. **Activates the 4th Domain Expert persona** which applies challenge patterns from the domain file. |
 | `--knowledge-dir` | No | Path to external domain knowledge directory (e.g., `~/projects/Search_Metric_Analyzer/domains/search_metrics/knowledge/`). Loads YAML/md summaries into evidence block. |
 | `--stakeholder` | No | Stakeholder name(s) to load profiles for. Supports comma-separated names for multi-stakeholder mode (e.g., `--stakeholder "Jane Doe, Bob Smith"`). Cap: 3 stakeholders max. Loads from `stakeholders/{slug}.md`. Enriches all 3 personas with stakeholder-specific context. Build profiles first with `/build-stakeholder-profile`. |
 | `--rounds` | No | Max Socratic dialogue rounds (default: 3) |
@@ -444,31 +446,83 @@ Agent tool call:
     10. Return ONLY the JSON output — no preamble, no explanation outside the JSON
 ```
 
-**All three calls go in a single message.** The environment decides whether to run
-them concurrently or serialize them — either way, you get all 3 results back before
-proceeding.
+**Agent call 4 — Domain Expert (conditional: only if `--domain` was specified):**
+
+If `--domain` was NOT specified, skip this call entirely. The Domain Expert requires
+domain knowledge with challenge patterns to produce sharp, non-generic challenges.
+
+```
+Agent tool call:
+  prompt: |
+    You are acting as: Domain Expert
+
+    Read the following persona definition carefully. It defines WHO you are,
+    WHAT lens you apply, and HOW to structure your output.
+
+    <persona>
+    [Use Read tool to get: skills/ds-brainstorm/references/domain-expert.md]
+    [Paste the FULL contents of that file here]
+    </persona>
+
+    ## Domain Challenge Patterns
+
+    [If the domain knowledge file contains a "Domain Challenge Patterns" section,
+    paste it here. These are the specific challenges you MUST apply.]
+
+    ## Analysis to Challenge
+
+    [Paste the user's analysis question/plan here]
+
+    ## Available Evidence
+
+    [Paste the complete evidence_block assembled in Step 0.5]
+
+    ## Instructions
+
+    1. Read the analysis question carefully
+    2. Apply your lens and attention directive to the evidence
+    3. **Ground your understanding FIRST:** Before challenging, state the system components,
+       pipeline stages, or metrics you are reasoning about. Include a `system_understanding`
+       field in your output with `components`, `boundaries`, and `unknowns`.
+       NEVER hypothesize about components you haven't explicitly named.
+    4. **Execute your MANDATORY FIRST ACTIONS** from your persona definition before any other analysis
+    5. **Check your PROHIBITED CONVERGENCE rules** — if you're drifting into another persona's lane, STOP and refocus
+    6. **Apply Domain Challenge Patterns** directly — each pattern is a specific challenge you must evaluate
+    7. Challenge the analysis plan from your perspective — do NOT agree easily
+    8. Produce structured JSON output per your Output Format section
+    9. Be specific: reference concrete domain frameworks, benchmarks, and definitions
+    10. Return ONLY the JSON output — no preamble, no explanation outside the JSON
+```
+
+**All calls go in a single message.** When `--domain` is specified, dispatch 4 Agent calls;
+otherwise, dispatch 3. The environment decides whether to run them concurrently or
+serialize them — either way, you get all results back before proceeding.
 
 ### Step 1.2: Sequential Fallback (If Parallel Fails)
 
 If Step 1.1 triggers a tool-availability or concurrency error (see Detection Logic above),
 switch to sequential dispatch for any personas that haven't returned yet.
 
-**Dispatch order:** Critic → Advocate → Pragmatist (skip any that already succeeded
-in the parallel attempt).
+**Dispatch order:** Critic → Advocate → Pragmatist → Domain Expert (skip any that already
+succeeded in the parallel attempt; skip Domain Expert entirely if `--domain` not specified).
 
 Use the **exact same prompts** from Step 1.1 — the only difference is that you issue
-one Agent call per message instead of three.
+one Agent call per message instead of all at once.
 
 Between each sequential dispatch, tell the user which persona just completed:
-- After Critic: *"Methodology Critic has weighed in. (1/3)"*
-- After Advocate: *"Stakeholder Advocate has weighed in. (2/3)"*
-- After Pragmatist: *"Pragmatist has weighed in. All three perspectives are in. Synthesizing..."*
+- After Critic: *"Methodology Critic has weighed in. (1/N)"*
+- After Advocate: *"Stakeholder Advocate has weighed in. (2/N)"*
+- After Pragmatist: *"Pragmatist has weighed in. (3/N)"*
+- After Domain Expert (if applicable): *"Domain Expert has weighed in. (4/4)"*
+- Final: *"All perspectives are in. Synthesizing..."*
+
+Where N is 4 if `--domain` is specified, 3 otherwise.
 
 ### Step 1.3: Post-Dispatch Handling (Both Modes)
 
-After all 3 agents return (whether via parallel or sequential), process each result:
+After all agents return (whether via parallel or sequential), process each result:
 
-**For each persona (critic_output, advocate_output, pragmatist_output):**
+**For each persona (critic_output, advocate_output, pragmatist_output, and domain_expert_output if `--domain` was specified):**
 
 1. **Parse the response as JSON.** Store as `{persona}_output`.
 2. **If the agent fails or times out:** Retry **once** with a shorter evidence block
@@ -490,25 +544,26 @@ After all 3 agents return (whether via parallel or sequential), process each res
 | Agent returns non-JSON text | Try to extract JSON from the response; if impossible, wrap the text in `{"status": "warning", "summary": "[text]", "perspective": "...", "findings": []}` |
 | Agent fails/times out | Retry once with reduced evidence (always sequential). If still fails, use error stub and proceed. |
 | Parallel dispatch partially fails (tool error) | Store successful results, switch to sequential for remaining personas |
-| 2 of 3 agents fail | Proceed with the 1 successful output. Note limitation to user. |
-| All 3 agents fail | Abort Phase 1. Tell user: *"All three perspectives failed to generate. Try rephrasing your analysis question or running again."* |
+| 2+ agents fail (but at least 1 succeeds) | Proceed with successful output(s). Note limitation to user. |
+| All agents fail | Abort Phase 1. Tell user: *"All perspectives failed to generate. Try rephrasing your analysis question or running again."* |
 
 ---
 
 ## Phase 2: Cross-Persona Challenge Synthesis
 
-**Goal:** The orchestrator (YOU, the agent executing this SKILL.md) reads all 3 subagent
-outputs and produces a structured challenge for the user. This is NOT a consensus
-summary — it's a debate brief that preserves tensions.
+**Goal:** The orchestrator (YOU, the agent executing this SKILL.md) reads all subagent
+outputs (3 core + Domain Expert if `--domain` was specified) and produces a structured
+challenge for the user. This is NOT a consensus summary — it's a debate brief that
+preserves tensions.
 
-> **Why the orchestrator does this, not a subagent:** Synthesis requires seeing all 3
-> outputs simultaneously. Dispatching a 4th subagent would waste context budget and add
-> latency. The orchestrator already has all 3 outputs in context.
+> **Why the orchestrator does this, not a subagent:** Synthesis requires seeing all
+> outputs simultaneously. The orchestrator already has all outputs in context.
 
 ### Step 2.1: Read All Three Outputs
 
-You already have `critic_output`, `advocate_output`, and `pragmatist_output` in context
-from Phase 1. If any are error stubs, note which perspectives are missing.
+You already have `critic_output`, `advocate_output`, `pragmatist_output`, and
+`domain_expert_output` (if `--domain` was specified) in context from Phase 1.
+If any are error stubs, note which perspectives are missing.
 
 ### Step 2.2: Identify Agreements
 
@@ -537,6 +592,8 @@ Produce **2-3 tension exchanges**. Common tension patterns:
 - Rigor vs. feasibility (Critic wants more controls; Pragmatist says data doesn't exist)
 - Rigor vs. business framing (Critic wants statistical precision; Advocate wants simple story)
 - Feasibility vs. business impact (Pragmatist says cut scope; Advocate says the cut version isn't compelling)
+- Domain vs. methodology (Domain Expert says established benchmark exists; Critic proposes custom eval)
+- Domain vs. feasibility (Domain Expert says standard approach requires infrastructure; Pragmatist wants shortcut)
 
 ### Step 2.4: Frame the Key Question
 
@@ -553,7 +610,7 @@ entire analysis. Good key questions force a tradeoff, not a yes/no.
 Format the synthesis as a conversational challenge (not a report). Use this structure:
 
 ```
-## Three Perspectives on Your Analysis
+## Panel Perspectives on Your Analysis
 
 **Where the panel agrees:**
 - [Agreement 1]
@@ -625,7 +682,7 @@ surface disagreements — the banner is only for unanimous alarm.
 Before entering Phase 3, trim context to prevent attention degradation:
 
 **Keep:**
-- Each persona's structured JSON output (~3K per persona, ~9K total)
+- Each persona's structured JSON output (~3K per persona, ~9-12K total)
 - The synthesis you just produced (agreements, tensions, key question)
 - Domain knowledge and external knowledge summaries (reference material)
 - The user's original question

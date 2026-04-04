@@ -63,7 +63,7 @@ def evals_json():
     return json.loads((BRAINSTORM_DIR / "evals" / "evals.json").read_text())
 
 
-@pytest.fixture(params=["methodology-critic.md", "stakeholder-advocate.md", "pragmatist.md"])
+@pytest.fixture(params=["methodology-critic.md", "stakeholder-advocate.md", "pragmatist.md", "domain-expert.md"])
 def persona_file(request):
     """Parameterized fixture: each persona file."""
     path = BRAINSTORM_DIR / "references" / request.param
@@ -134,10 +134,17 @@ class TestDivergenceAnchors:
         )
 
     def test_uncertainty_types_are_distinct(self, methodology_critic, stakeholder_advocate, pragmatist):
-        """Each persona must own a DIFFERENT type of uncertainty."""
+        """Each core persona must own a DIFFERENT type of uncertainty."""
         assert "statistical uncertainty" in methodology_critic
         assert "value uncertainty" in stakeholder_advocate
         assert "feasibility uncertainty" in pragmatist
+
+    def test_domain_expert_uncertainty_type(self):
+        """Domain Expert must own domain validity uncertainty, distinct from core 3."""
+        content = (BRAINSTORM_DIR / "references" / "domain-expert.md").read_text()
+        assert "domain validity" in content.lower(), (
+            "domain-expert.md must declare 'domain validity' uncertainty type"
+        )
 
     def test_dispatch_template_references_mandatory_actions(self, dispatch_template):
         """Dispatch template Step 3 must reference MANDATORY FIRST ACTIONS."""
@@ -424,3 +431,54 @@ class TestVerdictAssessment:
         assert "Do not display" in section or "Proceed normally" in section, (
             "Verdict must say to proceed normally when not triggered"
         )
+
+
+# ─────────────────────────────────────────────
+# Domain Expert (4th Persona)
+# ─────────────────────────────────────────────
+
+class TestDomainExpert:
+    """Verify Domain Expert persona and conditional dispatch."""
+
+    def test_conditional_dispatch_requires_domain(self, skill_md):
+        """SKILL.md must gate 4th persona dispatch on --domain being specified."""
+        # Find the Domain Expert agent call section
+        de_start = skill_md.find("Agent call 4")
+        assert de_start != -1, "SKILL.md must have an 'Agent call 4' for Domain Expert"
+        # The section must reference the --domain condition
+        de_section = skill_md[de_start:de_start + 500]
+        assert "--domain" in de_section, (
+            "Agent call 4 must be conditional on --domain"
+        )
+        assert "skip" in de_section.lower() or "not specified" in de_section.lower(), (
+            "Agent call 4 must explicitly say to skip when --domain is not specified"
+        )
+
+    def test_synthesis_includes_domain_expert(self, skill_md):
+        """Phase 2 synthesis must reference domain_expert_output."""
+        phase2_start = skill_md.find("## Phase 2")
+        phase3_start = skill_md.find("## Phase 3")
+        assert phase2_start != -1, "SKILL.md must have a '## Phase 2' section"
+        assert phase3_start != -1, "SKILL.md must have a '## Phase 3' section"
+        phase2 = skill_md[phase2_start:phase3_start]
+        assert "domain_expert_output" in phase2, (
+            "Phase 2 synthesis must reference domain_expert_output"
+        )
+
+    def test_socratic_references_domain_challenges(self, skill_md):
+        """Phase 2 tension patterns must include domain-specific tensions."""
+        phase2_start = skill_md.find("## Phase 2")
+        phase3_start = skill_md.find("## Phase 3")
+        phase2 = skill_md[phase2_start:phase3_start]
+        assert "Domain" in phase2 and ("benchmark" in phase2.lower() or "domain" in phase2.lower()), (
+            "Phase 2 tension patterns must include Domain Expert tensions"
+        )
+
+    def test_domain_file_has_challenge_patterns(self):
+        """search-relevance.md must have a Domain Challenge Patterns section."""
+        domain_file = BRAINSTORM_DIR / "references" / "search-relevance.md"
+        if domain_file.exists():
+            content = domain_file.read_text()
+            assert "Domain Challenge Patterns" in content, (
+                "search-relevance.md must have a 'Domain Challenge Patterns' section"
+            )

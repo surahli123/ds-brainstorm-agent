@@ -173,3 +173,44 @@ User Query → Query Understanding (L0) → Retrieval (L1) → Reranking (L2)
 | Connector | Integration linking external SaaS app to Rovo |
 | UMBRELLA | Pointwise LLM-as-Judge relevance labeling framework |
 | Mix-shift | Metric movement from composition change, not quality change |
+
+---
+
+## 9. Domain Challenge Patterns
+
+These are the challenges a search domain expert would raise. The Domain Expert persona
+reads these and applies them directly during brainstorm sessions.
+
+1. **Retrieval eval on new query distributions requires benchmarking.** Before building
+   custom evals, check standard retrieval benchmarks (BEIR, MTEB) on the target query
+   distribution. If agent-generated queries are a new distribution, benchmark first.
+
+2. **Challenge the relevance definition against the information need model.** In traditional
+   search, the user defines relevance. In agentic search, the agent's plan defines relevance.
+   In recommendation, implicit signals define relevance. Always ask: who decides what's
+   relevant, and does the evaluation framework reflect that?
+
+3. **Distinguish retrieval quality from answer extractability.** Retrieving the right document
+   is necessary but not sufficient. If the answer is in a table, PDF, or image that the
+   consumer (human or LLM) can't parse, retrieval "succeeded" but the task fails. Evaluate
+   both independently.
+
+4. **Check query distribution shift assumptions.** Agent-generated queries are structurally
+   different from human queries — longer, more specific, may contain reasoning traces or
+   explicit constraints. BM25 and other lexical methods are optimized for keyword-style
+   queries. Evaluate whether the retrieval stack's lexical/semantic balance needs retuning.
+
+5. **Don't port positional metrics to non-positional contexts.** NDCG assumes positional
+   discounting on a ranked list a human scans top-to-bottom. If the consumer is an LLM
+   that reads all results equally, positional discount is meaningless. Use set-based metrics
+   (precision, recall, F1) or task-outcome metrics instead.
+
+6. **Separate skill-level from trajectory-level evaluation.** A single Search Skill call
+   returning poor results does not mean the system failed — the agent may self-correct.
+   Conversely, all calls returning decent results doesn't mean the task succeeded — the
+   agent may combine them incorrectly. Evaluate both layers independently.
+
+7. **Validate judge calibration on the target query type.** LLM-as-Judge frameworks
+   (UMBRELLA, pairwise preference) are validated on specific datasets (e.g., WANDS for
+   e-commerce). Agreement rates do not transfer across domains or query types without
+   re-validation. Always measure inter-annotator agreement on YOUR query distribution.
