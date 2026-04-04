@@ -583,6 +583,43 @@ Format the synthesis as a conversational challenge (not a report). Use this stru
 
 Then wait for the user to respond. Do NOT proceed to Phase 3 automatically.
 
+### Step 2.5.1: Verdict Assessment (Informational)
+
+After presenting the synthesis, check the `assessment` field across all persona outputs.
+
+**Trigger condition:** ALL non-error personas returned `assessment: "MAJOR_ISSUES"`.
+- If any persona has `status: "error"`, exclude it from the count. Unanimity is
+  checked among responding personas only (minimum 2 of 3 must have responded).
+- If only 1 persona responded successfully, skip this step — insufficient signal
+  for a unanimous verdict.
+
+**If triggered (unanimous MAJOR_ISSUES):**
+
+Append this informational banner to the synthesis output:
+
+```
+---
+
+**All three perspectives flagged major issues with this analysis plan.**
+
+This doesn't mean the plan is bad — the personas are calibrated to challenge hard.
+But when all three independently flag serious concerns, it's worth pausing to consider
+whether the question needs sharpening before diving into debate.
+
+**Your options:**
+- **Continue to Socratic dialogue** — address the concerns one by one in the debate
+- **Narrow the question** — the plan may be too broad; pick one aspect to focus on
+- **Add more context** — use `--knowledge-dir` or `--domain` to give personas
+  domain-specific grounding that may resolve some concerns automatically
+```
+
+Then wait for the user to respond (same as Step 2.5's existing wait behavior).
+
+**If NOT triggered (at least one persona returned SOUND or CONCERNS):**
+
+Proceed normally. Do not display any banner. The existing synthesis tensions already
+surface disagreements — the banner is only for unanimous alarm.
+
 ### Step 2.6: Context Trimming (before Socratic loop)
 
 Before entering Phase 3, trim context to prevent attention degradation:
@@ -636,18 +673,56 @@ When the user responds to the synthesis (or to a previous Socratic push):
 3. **Check for new threads.** Did the user's response introduce a fundamentally new
    direction that the original personas didn't assess?
 
-### Step 3.2: Push Back
+### Step 3.2: Push Back (Targeted Adversarial)
 
-Construct your response using this logic:
+Construct your response using **verbatim quotes** from persona findings. Do NOT
+paraphrase or summarize — quote directly from `findings[].description` in the
+persona JSON outputs. This forces specificity and prevents generic pushback.
 
 **If the user addressed some concerns but not others:**
-> *"Good — you've addressed [addressed concern]. But [persona name]'s point about [unaddressed concern] is still open: [restate the specific concern as a question]."*
+
+1. Identify the highest-severity unaddressed finding from the persona outputs.
+2. Quote it verbatim.
+3. Construct a targeted follow-up.
+
+> *"Good — you've addressed [what they addressed]. But the [persona name] found:*
+>
+> *'[VERBATIM quote from findings[].description]'*
+>
+> *Your response doesn't address this. Specifically: [targeted question that connects
+> the finding to the user's plan]."*
 
 **If the user addressed all raised concerns:**
-> *"Strong responses. Let me push one level deeper: [follow-up question that tests the robustness of their answers, drawing on persona knowledge]."*
+
+1. Look for implicit assumptions in the user's responses that no persona challenged.
+2. Cross-reference: does the user's response to Persona A contradict what they told Persona B?
+3. If a contradiction exists, quote both findings.
+
+> *"Strong responses across the board. But I notice a tension in what you've said:
+> you told the [persona A] that '[verbatim from user response about topic X],' but
+> the [persona B] found: '[VERBATIM quote from findings[].description about topic X].'
+> These pull in different directions. Which takes priority?"*
 
 **If the user deflected or gave a vague answer:**
-> *"I hear you, but that doesn't resolve [persona name]'s concern. Specifically: [restate with more precision]. What would you concretely do about this?"*
+
+1. Identify which persona's finding was deflected.
+2. Quote the specific finding.
+3. Demand a concrete action or decision.
+
+> *"I hear you, but that's a restatement, not a resolution. The [persona name]'s
+> specific concern was:*
+>
+> *'[VERBATIM quote from findings[].description]'*
+>
+> *What would you concretely change in your analysis plan to address this?"*
+
+**Verbatim quoting rules:**
+- Always quote from `findings[].description` — these contain the specific, grounded
+  challenges each persona produced.
+- If the finding references a domain concept, include it. Don't strip domain vocabulary.
+- If the finding has a `domain_reference` field, mention it: *"(referencing [domain_reference])"*
+- Never fabricate a quote. If you can't find a relevant finding to quote, state what
+  the persona's overall concern was and ask the user to address it directly.
 
 ### Step 3.2.1: Blind Spot Escalation
 

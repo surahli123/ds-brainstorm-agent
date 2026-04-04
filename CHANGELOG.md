@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.7.0] - 2026-04-02 — Targeted Adversarial Pushback, Verdict Assessment, Eval-001 Validated
+
+### Added
+- Step 3.2 upgraded to "Targeted Adversarial" — Socratic pushback requires verbatim quotes from persona `findings[].description` with domain_reference attribution (PR #13)
+- Step 2.5.1 "Verdict Assessment" — informational banner after synthesis when all non-error personas return MAJOR_ISSUES unanimously, with concrete options: continue, narrow scope, add context (PR #13)
+- 12 new brainstorm skill structural tests (51 brainstorm total, 124 full suite) (PR #13)
+
+### Validated
+- Eval-001 with REAL parallel subagent dispatch: weighted average 4.50/5.0 (PASS)
+- D1 (Perspective Independence): 5.0 vs 4.85 inline baseline (+0.15, no degradation from parallel dispatch)
+- system_understanding populated in all 3 persona outputs
+- MANDATORY FIRST ACTIONS executed with distinct starting behaviors per persona
+- PROHIBITED CONVERGENCE prevented lane drift across all 3 personas
+- Eng reviewed with outside voice (Claude subagent): 10 findings, 3 cross-model tensions resolved
+
+### Design Decisions
+- Fork Routing (#3) dropped — confirmed as no-op (already implemented in Phase 0→1 flow)
+- Option B (orchestrator pushback) over Option A (full Round 2 dispatch) — divergence already solved by PR #12
+- Unanimous MAJOR_ISSUES trigger (not any-single) — adversarial calibration makes single-persona trigger fire ~80% of runs
+- Post-synthesis mailbox placement — outside voice caught: user needs to see concerns before deciding
+
 ## [1.6.0] - 2026-04-02 — Hybrid Reproducibility, Persona Grounding, Knowledge Integration
 
 ### Added
