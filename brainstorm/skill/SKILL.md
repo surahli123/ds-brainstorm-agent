@@ -52,6 +52,23 @@ and ask the user which ONE to brainstorm first. Do not proceed until you have a 
 
 If ambiguous, ask: *"I see a few threads here. Which one should we dig into first?"*
 
+### Step 0.1.5: Input Clarification (Wittgenstein-Socrates-Polanyi)
+
+Follow the clarification protocol in `prompts/build_clarification.md`.
+
+**Skip condition:** If the user's input already contains: (a) a specific metric or
+measure, (b) a clear comparison or hypothesis, and (c) a defined scope — skip
+clarification and proceed to Step 0.2. Tell the user: *"Your question is already
+sharp — moving to the debate."*
+
+**Output:** A `clarified_statement` block that replaces the raw user input in all
+downstream phases. The original input is preserved as `original_input` for reference.
+
+**Search grounding gate:** If `--domain` is NOT specified, after clarification ask
+the user whether to run web search, accept user-provided references, or proceed
+without external context. If `--domain` IS specified, proceed to Step 0.4 (search
+grounding) automatically.
+
 ### Step 0.2: Domain Knowledge Loading
 
 If `--domain` is specified, use `Read` to load the domain file:
@@ -173,6 +190,12 @@ docs are available).
 
 ### Step 0.4: Search Grounding
 
+**Conditional execution:** This step runs automatically when `--domain` is specified
+(domain knowledge guides search queries). When `--domain` is NOT specified, Step 0.1.5
+(Input Clarification) already asked the user whether to run web search. If the user
+declined search, skip this step entirely and proceed to Step 0.5 with whatever context
+is available. If the user opted in to search, proceed below.
+
 Execute **three `WebSearch` calls** to gather real-world evidence. These can run in parallel
 since they are independent.
 
@@ -208,6 +231,14 @@ Assemble it in this structure:
 
 ```markdown
 ## Shared Evidence Block
+
+### Clarification Context
+- **Original input:** {original_input — the user's verbatim question before clarification}
+- **Clarified question:** {clarified_statement — the sharpened question from Step 0.1.5}
+- **Tacit preferences:** {polanyi_extractions from Step 0.1.5, if any — otherwise "None extracted"}
+- **Constraints surfaced:** {constraints from F/D/Q classification in Step 0.1.5}
+
+[Omit this section entirely if Step 0.1.5 was skipped (input was already precise).]
 
 ### Confluence Context (internal docs — highest authority)
 [Results from Step 0.3b Confluence search, if available.]
@@ -736,6 +767,31 @@ Construct your response using **verbatim quotes** from persona findings. Do NOT
 paraphrase or summarize — quote directly from `findings[].description` in the
 persona JSON outputs. This forces specificity and prevents generic pushback.
 
+**Wittgenstein Vague Word Check (run FIRST, before any other pushback):**
+
+Before quoting persona findings, scan the user's response for DS vague words. If any
+are found, decompose before proceeding — vague responses produce vague follow-ups.
+
+**Lookup table access:** Re-read `prompts/build_clarification.md` Layer 1 Step 2 for
+the DS-specific vague word table. Common triggers: "impact" (which metric? which segment?),
+"better" (by what measure? compared to what baseline?), "significant" (statistically or
+business-meaningful?), "optimize" (for speed, accuracy, coverage, or cost?),
+"performance" (latency? throughput? quality? cost?).
+
+**When triggered:**
+> *"Two words need unpacking before I can accept this:*
+> - *'[word 1]' — [clarification direction from lookup table]*
+> - *'[word 2]' — [clarification direction from lookup table]*
+>
+> *Pick the specific measures and I'll check them against what the [persona name] raised."*
+
+**Rules:**
+- Surface at most 2 vague words per response. Don't turn pushback into a vocabulary quiz.
+- If the user's response contains no vague words from the table, skip silently and
+  proceed to verbatim persona quote.
+- This check fires INSTEAD of other philosophy tools for this round (one philosophy
+  intervention per round — Wittgenstein has highest priority).
+
 **If the user addressed some concerns but not others:**
 
 1. Identify the highest-severity unaddressed finding from the persona outputs.
@@ -772,6 +828,34 @@ persona JSON outputs. This forces specificity and prevents generic pushback.
 > *'[VERBATIM quote from findings[].description]'*
 >
 > *What would you concretely change in your analysis plan to address this?"*
+
+**Socratic Hidden Premise Check (after persona quote, if user committed to an approach):**
+
+When the user's response contains a concrete commitment (a method choice, a timeline,
+a metric selection), surface 2-3 unstated assumptions baked into that decision.
+
+**When triggered:**
+> *"That decision assumes three things:*
+> 1. *[assumption about data/infrastructure]*
+> 2. *[assumption about timing/external factors]*
+> 3. *[assumption about scope/feasibility]*
+>
+> *Which of these have you verified?"*
+
+**DS-specific premise patterns to check:**
+- Timeline commitments → assumes sufficient traffic/data volume for power
+- Metric choices → assumes the metric isn't confounded by other factors
+- Methodology choices → assumes required infrastructure exists
+- Audience framing → assumes stakeholder priorities haven't shifted
+- Baseline comparisons → assumes the baseline period is representative
+
+**Rules:**
+- Only fire when the user makes a NEW commitment in their response, not when
+  they restate an existing decision from the analysis plan.
+- Surface exactly 2-3 premises. Not 1 (too light), not 5 (overwhelming).
+- This check does NOT fire if Wittgenstein already fired this round (one
+  philosophy intervention per round). If this check fires, it also blocks
+  Polanyi (Step 3.2.3) for this round.
 
 **Verbatim quoting rules:**
 - Always quote from `findings[].description` — these contain the specific, grounded
@@ -838,6 +922,75 @@ but the brainstorm should close them first.
   prerequisite or can it run in parallel with the eval build?"*
 - Track unresolved thresholds in the ledger. If any remain at Phase 4, list them
   explicitly in the "Open Questions" section of the summary output.
+
+### Step 3.2.3: Polanyi Stall Detection + Extraction
+
+**When to trigger:** Starting from round 1 onwards, check each user response for
+stall signals. This step detects when the user KNOWS what they want but CANNOT
+verbalize it — a fundamentally different problem than vagueness (Wittgenstein) or
+compressed intent (Socratic).
+
+**Trigger signals (any one triggers this step):**
+- User says "you know what I mean", "that kind of thing", "hard to explain"
+- User uses a metaphor they can't unpack: "like what we did last quarter",
+  "that McKinsey-style thing"
+- User goes silent on a specific tension (addresses others, skips one consistently)
+- User keeps revising the same answer without converging (3+ revisions of the same point)
+- User directly says "I can't explain it but I know it when I see it"
+
+**When triggered, STOP verbal questioning. Switch to extraction:**
+
+> *"Sounds like you have a feel for this but it's hard to pin down. Let me try a
+> different angle:*
+> - *Can you point me to a past analysis or dashboard that got this right? I'll
+>   extract the pattern.*
+> - *Or tell me what outcome would make this analysis useless — sometimes the
+>   negative is easier to articulate."*
+
+**Three DS-adapted extraction strategies (use 1-2, not all 3):**
+
+| Strategy | When to use | Template |
+|---|---|---|
+| **Demonstration** | User references past work they liked | "Show me a past analysis or dashboard that captured what you're looking for — I'll extract the pattern" |
+| **Negation** | User can't say what they want | "What outcome would make this analysis useless? What metric would be misleading here?" |
+| **Behavioral extraction** | User has a body of prior work | "Link me to a previous analysis doc or notebook where you nailed the framing — I'll extract your implicit rules" |
+
+**After extraction, surface findings for confirmation:**
+> *"From your [example/negation/past work], I'm extracting these implicit preferences:*
+> - *[preference 1]*
+> - *[preference 2]*
+>
+> *Does that match what you were trying to say?"*
+
+**Dual Polanyi guard:** If Polanyi extracted preferences in Phase 0.5 (stored in the
+`clarified_statement` block's "Tacit preferences" field), reference those extractions
+first before re-triggering extraction in Phase 3. Say: "Earlier you showed me [example]
+and I extracted [preferences]. Does that still apply here, or is this a different kind
+of stall?" Only re-trigger full extraction if the Phase 0.5 preferences don't cover it.
+
+**Rules:**
+- Max 1 Polanyi intervention per dialogue round.
+- If user has no examples on hand, use only Negation.
+- Never use all three strategies — pick the most fitting 1-2.
+- Always surface extracted preferences for user confirmation — never assume.
+- Never continue verbal questioning on a stalled point; the stall IS the signal
+  that Socratic questioning has hit its limit.
+- This step does NOT fire if Wittgenstein or Socratic already fired this round
+  (one philosophy intervention per round — Polanyi has lowest priority).
+
+### Philosophy Intervention Priority (Steps 3.2 + 3.2.3)
+
+At most ONE philosophy-framework tool fires per pushback round. Priority order:
+
+1. **Wittgenstein decomposition** (Step 3.2, first check) — if vague words detected,
+   decompose first. Blocks everything else until resolved.
+2. **Socratic hidden premise** (Step 3.2, after persona quote) — if user committed
+   to an approach, surface assumptions.
+3. **Polanyi stall detection** (Step 3.2.3) — if user stalled, switch to extraction.
+
+If multiple triggers fire in the same round, pick the highest-priority one. The others
+can fire in subsequent rounds. This prevents overwhelm — the orchestrator already has
+persona quotes, blind spots, and threshold pushes.
 
 ### Step 3.3: Re-invoke a Subagent (Rare, Only When Needed)
 
