@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.9.0] - 2026-04-11 — Philosophy-Based Clarification Layer (Wittgenstein-Socrates-Polanyi)
+
+### Added
+- Phase 3 pushback tools: Wittgenstein vague word decomposition, Socratic hidden premise detection, Polanyi stall detection with DS-adapted extraction strategies
+- Philosophy Intervention Priority rule: one tool per round, priority W > S > P
+- `prompts/build_clarification.md`: full clarification protocol with F/D/Q classification, DS-specific vague word lookup table (12 entries), search grounding gate
+- Phase 0 Step 0.1.5: pre-debate input clarification (max 2 dialogue turns, skip if precise)
+- Conditional search grounding (Phase 0.4): asks user when `--domain` not specified
+- Clarification Context section in evidence block (Step 0.5)
+- 2 eval test cases: vague-input-clarification (4 scenarios), phase3-philosophy-pushback (5 scenarios)
+- Design spec and implementation plan in docs/superpowers/
+
+### Design Decisions
+- Phase 3 tools ship as highest priority (zero friction, improve every session)
+- Phase 0.5 clarification is light touch to avoid patronizing expert users
+- Polanyi is always a fallback, never mandatory — fires ~20% of the time
+- Dual Polanyi guard prevents redundant extraction across phases
+- Modular architecture: clarification protocol in separate file, Phase 3 tools inline
+
+### Context
+- Inspired by riiiku/clarify-skill, Jaden's Wittgenstein+Socrates+Polanyi synthesis, cellinlab's Polanyi deep-dive
+- CEO review identified clarification as ~20% of "coursework vs real DS" gap; domain depth (live data integration) is ~80%
+- Breaking change: search grounding no longer auto-fires without `--domain`
+
 ## [1.8.0] - 2026-04-03 — Domain Expert Persona, Search Skills Eval Framework
 
 ### Added
