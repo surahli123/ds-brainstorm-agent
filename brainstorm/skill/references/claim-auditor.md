@@ -174,6 +174,10 @@ and questioned all other findings.
 
 ---
 
+### Recommendation Placement Probe
+- Do recommendations appear before slide 3? If not, consider exec-mode ordering where recommendations open the deck and subsequent slides provide evidence.
+- Can an interviewer read only the first content slide and know exactly what actions the analyst recommends, for whom, and under what conditions?
+
 ## Output Format
 
 ```json
