@@ -1,0 +1,56 @@
+anti_patterns:
+  - name: "Outcome-based treatment assignment"
+    severity: blocker
+    description: "Using the outcome variable to define which units are treated"
+    real_example: "eBay: t-test on MC1 pre/post change → 134 DMAs labeled test. True count was 11."
+    detection_rule: "Treatment assignment uses the same metric that appears in the causal model"
+    fix: "Use mechanical/input-side signal (e.g., ad spend → $0, near-total metric collapse) instead of statistical significance"
+    interview_question: "Walk me through how you identified treatment units"
+
+  - name: "Seasonality-as-treatment"
+    severity: blocker
+    description: "Attributing a seasonal pattern to an intervention"
+    real_example: "Handshake: Jun→Oct DAU recovery attributed to July 1 model update. Same pattern existed in 2023 with no intervention."
+    detection_rule: "Pre/post window spans a seasonal transition AND same pattern exists in prior year without intervention"
+    fix: "Compute DiD against same-calendar-window prior year before claiming causal effect"
+    interview_question: "If the same pattern exists last year without the intervention, what changes?"
+
+  - name: "Post-hoc window extension"
+    severity: blocker
+    description: "Extending the analysis window until results look positive"
+    real_example: "Handshake: 'takes 2 months to become effective' — extended to Sep-Oct peak season"
+    detection_rule: "Post-window was not pre-specified; candidate shifted to the window with best results"
+    fix: "Pre-register 30/60/90-day windows; report ALL; show sensitivity table"
+    interview_question: "Was this window pre-registered before you saw the data?"
+
+  - name: "Headline number from nowhere"
+    severity: blocker
+    description: "A number on the slide that doesn't appear in any chart, computation, or source"
+    real_example: "Handshake: 25.5% YoY in headline; chart shows 23.5% and 20.1%; ground truth is 20.0%"
+    detection_rule: "Number on slide ≠ any number in chart labels or registered computations"
+    fix: "Every number traces to exactly one source computation with pinned formula and inputs"
+    interview_question: "Which cell/chart does this number come from?"
+
+  - name: "Multiple testing without correction"
+    severity: concern
+    description: "Running N tests at alpha=0.05 without Bonferroni/FDR"
+    real_example: "eBay: 211 DMA-level t-tests at α=0.05 → ~10 false positives expected under null"
+    detection_rule: "N > 20 tests at alpha=0.05 with no correction mentioned"
+    fix: "Apply Bonferroni (α/N) or BH-FDR; report family-wise error rate"
+    interview_question: "How many tests did you run and how did you correct for multiplicity?"
+
+  - name: "Student-side metrics for employer-side revenue"
+    severity: concern
+    description: "Optimizing metrics for the free side of a marketplace while revenue comes from the paying side"
+    real_example: "Handshake Q4: email strategy with Login Rate, Application Rate — zero employer-side metrics. Revenue is 100% employer-side."
+    detection_rule: "Strategy metrics do not ladder to the paying customer's retention/LTV/renewal"
+    fix: "Before any strategy, answer: 'who pays?' Then ensure at least one metric connects to that party"
+    interview_question: "If we 2x these metrics, how much does MRR move?"
+
+  - name: "Spec non-compliance"
+    severity: blocker
+    description: "Final artifact violates an explicit constraint in the prompt"
+    real_example: "Handshake Q3: prompt says 'one row per school'; submission delivers one row per school per day"
+    detection_rule: "Output grain/format/count contradicts a literal phrase in the prompt"
+    fix: "Before starting, extract every noun and constraint into a checklist. Verify before submitting."
+    interview_question: "The prompt says X. Your output has Y. Why?"
