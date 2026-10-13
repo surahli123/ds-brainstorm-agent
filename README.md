@@ -1,5 +1,13 @@
 # DS Brainstorm Agent
 
+> **Retired (2026-10).** This repo is no longer developed. What was worth keeping moved to ds-stack v0.3 (`surahli123/ds-stack`, private):
+> - the claim auditor's rule, now that every number in a readout carries a tag a script resolves to its query or check;
+> - the anti-patterns, now `skills/ds-mode/references/mistake-classes.md`;
+> - the three personas, now `skills/ds-mode/references/plan-critique.md` (optional);
+> - autoresearch's eval lessons (average 3 runs, beware regression to the mean, pin one judge model), now `eval/README.md`.
+>
+> Not carried over: the debate loop, report-gen, stakeholder profiles, the writer-judge loop and the RovoDev port. The rest of this repo stays as a record. The metric numbers in it are synthetic.
+
 Two AI-powered tools for data scientists: one helps you **plan** analyses, the other **polishes** your write-ups.
 
 | Tool | What it does | How it works |
