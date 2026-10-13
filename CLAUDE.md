@@ -1,5 +1,7 @@
 # DS Brainstorm Agent
 
+> **Retired (2026-10).** Don't develop here. Active work lives in ds-stack (`surahli123/ds-stack`); see README.md for what moved where.
+
 Two tools for data scientists: **Brainstorm** (plan analyses) and **AutoResearch** (polish write-ups).
 
 ## Project Structure (restructured 2026-03-28)

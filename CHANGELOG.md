@@ -1,5 +1,9 @@
 # Changelog
 
+## Retired - 2026-10-13
+
+Folded into ds-stack v0.3 and retired. The README lists what moved where; nothing new ships here.
+
 ## [1.9.0] - 2026-04-11 — Philosophy-Based Clarification Layer (Wittgenstein-Socrates-Polanyi)
 
 ### Added
