@@ -191,3 +191,20 @@ Styling: `"fillStyle": "solid"` for crisp flat fills (default is sketchy hachure
 Sizing: shapes ≥ 120×60 with width ≥ `labelChars * 12`, fonts ≥ 16 (titles ≥ 20), gaps 40–80px (120px+ for labeled arrows), align to a 20px grid.
 Order of work: background zones → primary shapes (with `text`) → arrows (bound via ids) → annotations → refine (align/distribute/screenshot).
 MCP mode has the full guide behind the `read_diagram_guide` tool.
+
+## Field Notes (learned the hard way)
+
+From drawing a 40-element flowchart in a cloud session (2026-11-05). Each of these cost a redraw.
+
+- **First `npx` run is slow.** The package download can take several minutes. Run `npx -y mcp-excalidraw-server status` in the background first and write the element JSON meanwhile.
+- **Unicode symbols switch fonts mid-line.** A label containing `→`, `—`, `·`, `①` falls back to a system font for that line, so one shape mixes hand-drawn and sans-serif text (the CLI warns `non-Latin text detected`). Setting `fontFamily` doesn't fix it, because the bound label doesn't inherit it. Use ASCII: `->`, `-`, `|`, `1)`.
+- **Diamonds hold about half the text of a same-sized rectangle.** Text wraps mid-word and overflows onto the arrows below. Keep decision text to one or two short words (`Judgable?`), at least 340×150, and put the detail in a nearby box or the subtitle.
+- **Arrow labels on short arrows cover the line.** On a gap under ~150px, use `yes` / `no`, not a phrase.
+- **Bound arrows ignore your `points`.** With `startElementId`/`endElementId`, the arrow is re-routed edge-to-edge in a straight line, so an arrow between two zones that are not neighbours cuts straight through the zone between them. For fan-outs and long connections, use an **unbound** elbowed arrow with absolute coordinates:
+  ```json
+  {"type":"arrow","x":670,"y":500,"elbowed":true,"points":[[0,0],[0,40],[-430,40],[-430,78]]}
+  ```
+  Leave 60–80px of clear space between tiers so the horizontal leg has room.
+- **Binding an arrow to a large zone** lands it on the zone's corner, often over the zone's title. Aim unbound arrows at the top-centre of the zone instead.
+- **Rebuilding beats patching for layout changes.** Keep the scene in a small Python script that writes `elements.json`, then `clear --yes && add elements.json && screenshot`. Moving one tier means shifting everything below it, and a script makes that one line.
+- **Check the model, not just the pixels.** A neat diagram can still show the wrong structure. Before drawing, ask whether the steps are sequential or parallel, and which dependencies are real. A flowchart that chains three independently assigned labels one after another is wrong even when every box is readable.
